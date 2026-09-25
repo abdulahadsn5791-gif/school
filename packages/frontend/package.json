@@ -1,0 +1,64 @@
+{
+  "name": "@ecomerece/frontend",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "types": "index.ts",
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
+    },
+    "./auth": {
+      "types": "./adapters/auth/auth-adapter.web.ts",
+      "web": "./adapters/auth/auth-adapter.web.ts",
+      "react-native": "./adapters/auth/auth-adapter.native.ts",
+      "default": "./adapters/auth/auth-adapter.web.ts"
+    },
+    "./storage": {
+      "types": "./adapters/storage/storage-adapter.web.ts",
+      "web": "./adapters/storage/storage-adapter.web.ts",
+      "react-native": "./adapters/storage/storage-adapter.native.ts",
+      "default": "./adapters/storage/storage-adapter.web.ts"
+    },
+    "./navigation": {
+      "types": "./adapters/navigation/index.ts",
+      "default": "./adapters/navigation/index.ts"
+    },
+    "./theme": {
+      "types": "./services/theme.service.ts",
+      "default": "./services/theme.service.ts"
+    },
+    "./app-settings": {
+      "types": "./services/app-settings.service.ts",
+      "default": "./services/app-settings.service.ts"
+    },
+    "./error": {
+      "types": "./services/parseModalError.service.ts",
+      "default": "./services/parseModalError.service.ts"
+    },
+    "./supabase": {
+      "types": "./services/supabaseClient.ts",
+      "default": "./services/supabaseClient.ts"
+    },
+    "./user": {
+      "types": "./modules/user/index.ts",
+      "default": "./modules/user/index.ts"
+    }
+  },
+  "dependencies": {
+    "@ecomerece/domain": "workspace:*",
+    "@ecomerece/shared": "workspace:*",
+    "@supabase/ssr": "^0.12.5",
+    "@supabase/supabase-js": "^2.114.0",
+    "@tanstack/react-query": "^5.102.8",
+    "zustand": "^5.0.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.0.0"
+  }
+}

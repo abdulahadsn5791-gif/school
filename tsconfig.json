@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@ecomerece/domain": ["./packages/domain/index.ts"],
+      "@ecomerece/frontend": ["./packages/frontend/index.ts"],
+      "@ecomerece/frontend/*": ["./packages/frontend/*"],
+      "@ecomerece/shared": ["./packages/shared/index.ts"],
+      "@ecomerece/ui": ["./packages/ui/index.ts"]
+    },
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["bun"]
+  }
+}

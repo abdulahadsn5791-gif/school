@@ -1,0 +1,155 @@
+/* ============================================================
+   OS-Grade UI — Tokens (DESIGN.md §8 / Appendix C)
+   Single source of truth. No `dark:` variants anywhere in markup:
+   components bind to rgb(var(--token)) which swaps per theme.
+   ============================================================ */
+
+/* ─── LIGHT (default) ──────────────────────────────────────────────────── */
+:root {
+  color-scheme: light;
+
+  --canvas: 233 234 238; /* #E9EAEE */
+  --surface-1: 241 242 245; /* #F1F2F5 */
+  --surface-2: 248 249 251; /* #F8F9FB */
+  --surface-3: 252 252 253; /* #FCFCFD */
+  --surface-4: 255 255 255; /* #FFFFFF — topmost layer only */
+
+  /* Glass material (§14.1) — frosted chrome surface, flipped per theme */
+  --glass: 255 255 255; /* light frosted white */
+
+  --ink: 11 13 18; /* #0B0D12 */
+  --ink-2: 76 82 96; /* #4C5260 */
+  --ink-3: 103 109 123; /* #676D7B */
+  --ink-4: 162 167 178; /* #A2A7B2 */
+
+  --line: 11 13 18; /* hairlines = ink at 5–15% */
+
+  --accent: 11 99 229; /* #0B63E5 */
+  --accent-ink: 255 255 255; /* white sits ON the accent fill */
+
+  --success: 15 123 82; /* #0F7B52 */
+  --warning: 154 98 18; /* #9A6212 */
+  --danger: 206 43 43; /* #CE2B2B */
+  --info: 11 99 229; /* #0B63E5 */
+
+  --shadow-sm: 0 1px 2px rgb(15 18 26 / 0.06), 0 1px 3px rgb(15 18 26 / 0.04);
+  --shadow-md: 0 4px 14px rgb(15 18 26 / 0.08), 0 1px 3px rgb(15 18 26 / 0.05);
+  --shadow-lg: 0 16px 40px rgb(15 18 26 / 0.14), 0 2px 8px rgb(15 18 26 / 0.06);
+}
+
+/* ─── DARK (follows the OS) ────────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --canvas: 10 11 13; /* #0A0B0D */
+    --surface-1: 19 20 23; /* #131417 */
+    --surface-2: 27 29 33; /* #1B1D21 */
+    --surface-3: 36 38 43; /* #24262B */
+    --surface-4: 46 48 54; /* #2E3036 */
+
+    --ink: 245 246 248; /* #F5F6F8 */
+    --ink-2: 169 174 184; /* #A9AEB8 */
+    --ink-3: 134 139 150; /* #868B96 */
+    --ink-4: 86 90 99; /* #565A63 */
+
+    --line: 255 255 255;
+
+    --accent: 61 139 255; /* #3D8BFF */
+    --accent-ink: 7 20 43; /* #07142B — DARK ink on the accent fill */
+
+    --success: 52 199 123; /* #34C77B */
+    --warning: 240 178 61; /* #F0B23D */
+    --danger: 255 92 92; /* #FF5C5C */
+    --info: 61 139 255;
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.35);
+    --shadow-md: 0 4px 12px rgb(0 0 0 / 0.4);
+    --shadow-lg: 0 8px 28px rgb(0 0 0 / 0.5);
+
+    --glass: 36 38 43; /* dark frosted — near surface-3 */
+  }
+}
+
+/* ─── DARK (explicit override) — identical values ──────────────────────── */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas: 10 11 13;
+  --surface-1: 19 20 23;
+  --surface-2: 27 29 33;
+  --surface-3: 36 38 43;
+  --surface-4: 46 48 54;
+
+  --ink: 245 246 248;
+  --ink-2: 169 174 184;
+  --ink-3: 134 139 150;
+  --ink-4: 86 90 99;
+
+  --line: 255 255 255;
+
+  --accent: 61 139 255;
+  --accent-ink: 7 20 43;
+
+  --success: 52 199 123;
+  --warning: 240 178 61;
+  --danger: 255 92 92;
+  --info: 61 139 255;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.35);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 8px 28px rgb(0 0 0 / 0.5);
+
+  --glass: 36 38 43;
+}
+
+/* ─── Base resets ──────────────────────────────────────────────────────── */
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: rgb(var(--canvas));
+    color: rgb(var(--ink));
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: rgb(var(--accent) / 0.25);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--line) / 0.18);
+    border-radius: 8px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(var(--line) / 0.28);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* ─── Reduced motion ───────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: must override author transitions for reduced motion */
+    transition-duration: 1ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: must override author animations for reduced motion */
+    animation-duration: 1ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: must stop looping for reduced motion */
+    animation-iteration-count: 1 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: must stop smooth scroll for reduced motion */
+    scroll-behavior: auto !important;
+  }
+}

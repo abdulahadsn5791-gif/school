@@ -1,0 +1,42 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# builds
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+
+# env & secrets — NEVER commit
+.env
+.env.*
+.env.local
+!*.example
+
+# testing
+coverage/
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# editor/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# bun
+.bun/
+
+# pm2
+.pm2/
+
+# key/cert safety net
+*.pem
+*.key

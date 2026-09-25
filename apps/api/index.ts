@@ -1,0 +1,67 @@
+import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
+import { secureHeaders } from 'hono/secure-headers';
+import app from './app';
+import { registerErrorHandler } from './errors/error-handler';
+import { dbMiddleware } from './middleware/db.middleware';
+import { rateLimiter } from './middleware/rateLimiter';
+import { requestGuards } from './middleware/requestguard.middleware';
+import routes from './routes';
+
+const corsOrigins = (process.env.CORS_ORIGIN ?? 'http://localhost:3000')
+  .split(',')
+  .map((o) => o.trim());
+
+app.use(logger());
+
+app.use(
+  '*',
+  secureHeaders({
+    contentSecurityPolicy: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+    },
+    xFrameOptions: 'DENY',
+    xContentTypeOptions: 'nosniff',
+    referrerPolicy: 'no-referrer',
+  }),
+);
+
+app.use(
+  '*',
+  cors({
+    origin: corsOrigins,
+    credentials: true,
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+  }),
+);
+
+app.use(
+  '*',
+  ...requestGuards({
+    maxUrlLength: 200,
+    maxQueryLength: 100,
+    maxParamLength: 40,
+    maxBodyBytes: 7_000_000,
+    maxJsonDepth: 5,
+    maxJsonNodes: 50,
+  }),
+);
+
+app.use('*', rateLimiter);
+app.use('*', dbMiddleware);
+
+app.options('*', (c) => {
+  return c.text('');
+});
+
+app.route('/', routes);
+
+registerErrorHandler(app);
+
+export default {
+  port: 8000,
+  fetch: app.fetch,
+  reusePort: true,
+};
