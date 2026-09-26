@@ -38,3 +38,12 @@ export interface EnrollmentResponseDto {
   isDeleted: boolean;
   createdAt: Date;
 }
+
+/** One student on a class roster, with the name resolved for display. */
+export interface ClassRosterStudentDto {
+  studentId: string;
+  fullName: string;
+  rollNumber: string | null;
+}
+
+export type ClassRosterResponseDto = ClassRosterStudentDto[];

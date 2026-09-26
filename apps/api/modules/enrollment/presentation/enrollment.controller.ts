@@ -2,6 +2,7 @@ import {
   createEnrollmentDto,
   deleteEnrollmentDto,
   enrollmentIdDto,
+  getClassRosterDto,
   getEnrollmentsDto,
   idSchema,
   updateEnrollmentDto,
@@ -25,6 +26,12 @@ export class EnrollmentController extends BaseController<EnrollmentAppService> {
   list = async (c: Context) => {
     const query = this.query(c, getEnrollmentsDto);
     return this.ok(c, await this.service.listEnrollments(query));
+  };
+
+  roster = async (c: Context) => {
+    const actor = c.get('user');
+    const query = this.query(c, getClassRosterDto);
+    return this.ok(c, await this.service.getClassRoster(query, { ...actor, role: c.get('role') }));
   };
 
   update = async (c: Context) => {

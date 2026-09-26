@@ -13,7 +13,7 @@ export class LeaveController extends BaseController<LeaveAppService> {
   submit = async (c: Context) => {
     const actor = c.get('user');
     const data = await this.body(c, submitLeaveDto);
-    return this.created(c, await this.service.submit(data, actor));
+    return this.created(c, await this.service.submit(data, { ...actor, role: c.get('role') }));
   };
 
   approve = async (c: Context) => {
@@ -30,12 +30,16 @@ export class LeaveController extends BaseController<LeaveAppService> {
 
   getLeaveById = async (c: Context) => {
     const leaveId = this.param(c, 'id', idSchema);
-    return this.ok(c, await this.service.getLeave(leaveId));
+    return this.ok(
+      c,
+      await this.service.getLeave(leaveId, { ...c.get('user'), role: c.get('role') }),
+    );
   };
 
   list = async (c: Context) => {
+    const actor = c.get('user');
     const query = this.query(c, getLeavesDto);
-    return this.ok(c, await this.service.listLeaves(query));
+    return this.ok(c, await this.service.listLeaves(query, { ...actor, role: c.get('role') }));
   };
 
   softDelete = async (c: Context) => {

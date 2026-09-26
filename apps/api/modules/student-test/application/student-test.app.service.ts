@@ -1,4 +1,5 @@
 import {
+  type AssignmentAggregate,
   type IAssignmentRepository,
   Id,
   type IEventBus,
@@ -17,7 +18,12 @@ import type {
   MarkMissedType,
   SubmitStudentTestType,
 } from '@ecomerece/shared';
-import { ConflictError, NotFoundError } from '../../../errors/app-error';
+import {
+  BadRequestError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+} from '../../../errors/app-error';
 import { StudentTestMapper } from '../infra/student-test.mapper';
 import { StudentTestMessages } from '../presentation/student-test.messages';
 
@@ -87,9 +93,25 @@ export class StudentTestAppService {
     return StudentTestMapper.aggregateToReadModel(submission);
   }
 
-  async grade(data: GradeStudentTestType, actor: { _id: string }): Promise<StudentTestReadModel> {
+  /**
+   * Grade a submission. Admins may grade anything; teachers may only grade
+   * submissions belonging to an assignment they own.
+   */
+  async grade(
+    data: GradeStudentTestType,
+    actor: { _id: string; role: string },
+  ): Promise<StudentTestReadModel> {
     const submission = await this.studentTestRepo.FindByIdOrThrow(Id.create(data.studentTestId));
     if (submission.isDeleted) throw new NotFoundError('Submission not found.');
+    const assignment = await this.assertCanGrade(submission, actor);
+
+    // The aggregate only rejects negative marks, so the assignment's ceiling is
+    // enforced here — otherwise a 100-mark assignment can be graded 999999.
+    if (assignment && data.marksObtained > assignment.totalMarks) {
+      throw new BadRequestError(
+        `Marks cannot exceed the assignment total of ${assignment.totalMarks}.`,
+      );
+    }
 
     submission.grade(data.marksObtained, data.teacherFeedback ?? null, Id.create(actor._id));
 
@@ -98,9 +120,13 @@ export class StudentTestAppService {
     return StudentTestMapper.aggregateToReadModel(submission);
   }
 
-  async markMissed(data: MarkMissedType, _actor: { _id: string }): Promise<StudentTestReadModel> {
+  async markMissed(
+    data: MarkMissedType,
+    actor: { _id: string; role: string },
+  ): Promise<StudentTestReadModel> {
     const submission = await this.studentTestRepo.FindByIdOrThrow(Id.create(data.studentTestId));
     if (submission.isDeleted) throw new NotFoundError('Submission not found.');
+    await this.assertCanGrade(submission, actor);
 
     submission.markMissed();
 
@@ -109,20 +135,58 @@ export class StudentTestAppService {
     return StudentTestMapper.aggregateToReadModel(submission);
   }
 
+  /**
+   * Admins pass; teachers must own the assignment the submission belongs to.
+   * Returns the owning assignment so callers can enforce its mark ceiling.
+   */
+  private async assertCanGrade(
+    submission: StudentTestAggregate,
+    actor: { _id: string; role: string },
+  ): Promise<AssignmentAggregate | null> {
+    if (!this.assignmentRepo) return null;
+
+    const assignment = await this.assignmentRepo.FindByIdOrThrow(submission.assignmentId);
+    if (actor.role !== 'admin' && !assignment.teacherId.equals(Id.create(actor._id))) {
+      throw new ForbiddenError('You can only grade submissions for your own assignments.');
+    }
+    return assignment;
+  }
+
   async getSubmission(studentTestId: string): Promise<StudentTestReadModel> {
     const submission = await this.studentTestRepo.FindByIdOrThrow(Id.create(studentTestId));
     return StudentTestMapper.aggregateToReadModel(submission);
   }
 
-  async listSubmissions(query: GetStudentTestsType): Promise<{
+  async listSubmissions(
+    query: GetStudentTestsType,
+    actor?: { _id: string; role: string },
+  ): Promise<{
     data: StudentTestReadModel[];
     meta: { nextCursor: string | null; prevCursor: string | null; hasMore: boolean };
   }> {
+    const empty = { nextCursor: null, prevCursor: null, hasMore: false };
     const filter: Record<string, unknown> = { 'deleted.deleted': false };
     if (query.schoolId) filter.schoolId = query.schoolId;
-    if (query.assignmentId) filter.assignmentId = query.assignmentId;
     if (query.studentId) filter.studentId = query.studentId;
     if (query.status) filter.status = query.status;
+
+    // A teacher only ever sees submissions for assignments they own. The assignment
+    // ids are resolved server-side rather than trusted from the client.
+    if (actor && actor.role !== 'admin') {
+      if (!query.schoolId || !this.assignmentRepo) return { data: [], meta: empty };
+      const mine = await this.assignmentRepo.FindByTeacher(
+        Id.create(query.schoolId),
+        Id.create(actor._id),
+      );
+      const owned = mine.map((assignment) => assignment.id);
+      const scoped = query.assignmentId
+        ? owned.filter((id) => id.equals(Id.create(query.assignmentId as string)))
+        : owned;
+      if (scoped.length === 0) return { data: [], meta: empty };
+      filter.assignmentId = { $in: scoped.map((id) => id.value) };
+    } else if (query.assignmentId) {
+      filter.assignmentId = query.assignmentId;
+    }
 
     const result = await this.studentTestRepo.FindPaginated({
       filter,

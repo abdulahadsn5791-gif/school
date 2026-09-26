@@ -14,7 +14,10 @@ export class AssignmentController extends BaseController<AssignmentAppService> {
   create = async (c: Context) => {
     const actor = c.get('user');
     const data = await this.body(c, createAssignmentDto);
-    return this.created(c, await this.service.createAssignment(data, actor));
+    return this.created(
+      c,
+      await this.service.createAssignment(data, { ...actor, role: c.get('role') }),
+    );
   };
 
   getAssignmentById = async (c: Context) => {
@@ -24,13 +27,16 @@ export class AssignmentController extends BaseController<AssignmentAppService> {
 
   list = async (c: Context) => {
     const query = this.query(c, getAssignmentsDto);
-    return this.ok(c, await this.service.listAssignments(query));
+    return this.ok(
+      c,
+      await this.service.listAssignments(query, { ...c.get('user'), role: c.get('role') }),
+    );
   };
 
   update = async (c: Context) => {
     const actor = c.get('user');
     const data = await this.body(c, updateAssignmentDto);
-    return this.ok(c, await this.service.updateAssignment(data, actor));
+    return this.ok(c, await this.service.updateAssignment(data, { ...actor, role: c.get('role') }));
   };
 
   softDelete = async (c: Context) => {

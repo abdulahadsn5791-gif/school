@@ -4,6 +4,8 @@ import { idSchema } from '../../dtos';
 
 export const assignmentTypeSchema = z.enum(['homework', 'test', 'oral']);
 
+export type AssignmentType = z.infer<typeof assignmentTypeSchema>;
+
 export const createAssignmentDto = z
   .object({
     schoolId: idSchema,
@@ -16,7 +18,9 @@ export const createAssignmentDto = z
     type: assignmentTypeSchema,
     classId: idSchema,
     subjectId: idSchema,
-    teacherId: idSchema,
+    // Optional: a teacher's assignments are always attributed to the authenticated
+    // actor, so only admins need to supply this.
+    teacherId: idSchema.optional(),
     assignedDate: z.coerce.date().optional(),
     dueDate: z.coerce.date(),
     totalMarks: z.coerce.number().min(1, 'Total marks must be at least 1').max(1000).optional(),

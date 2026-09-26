@@ -89,6 +89,7 @@ export class ClassAppService {
   }> {
     const filter: Record<string, unknown> = { 'deleted.deleted': false };
     if (query.schoolId) filter.schoolId = query.schoolId;
+    if (query.classTeacherId) filter.classTeacherId = query.classTeacherId;
     if (query.academicYear) filter.academicYear = query.academicYear;
     if (query.search) {
       const escaped = query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

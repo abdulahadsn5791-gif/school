@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { adminMiddleware } from '../../../middleware/admin';
+import { adminMiddleware, teacherOrAdminMiddleware } from '../../../middleware/admin';
 import { authMiddleware } from '../../../middleware/auth';
 import { createStudentTestModule } from '../student-test.module';
 
@@ -9,11 +9,16 @@ const { studentTestController } = createStudentTestModule();
 studentTestRoutes.get('/', authMiddleware, studentTestController.list);
 studentTestRoutes.get('/:id', authMiddleware, studentTestController.getSubmissionById);
 studentTestRoutes.post('/', authMiddleware, adminMiddleware, studentTestController.create);
-studentTestRoutes.patch('/grade', authMiddleware, adminMiddleware, studentTestController.grade);
+studentTestRoutes.patch(
+  '/grade',
+  authMiddleware,
+  teacherOrAdminMiddleware,
+  studentTestController.grade,
+);
 studentTestRoutes.patch(
   '/mark-missed',
   authMiddleware,
-  adminMiddleware,
+  teacherOrAdminMiddleware,
   studentTestController.markMissed,
 );
 studentTestRoutes.patch('/submit', authMiddleware, studentTestController.submit);

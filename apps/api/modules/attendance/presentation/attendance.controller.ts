@@ -12,7 +12,7 @@ export class AttendanceController extends BaseController<AttendanceAppService> {
   mark = async (c: Context) => {
     const actor = c.get('user');
     const data = await this.body(c, markAttendanceDto);
-    return this.created(c, await this.service.mark(data, actor));
+    return this.created(c, await this.service.mark(data, { ...actor, role: c.get('role') }));
   };
 
   update = async (c: Context) => {
@@ -23,7 +23,7 @@ export class AttendanceController extends BaseController<AttendanceAppService> {
 
   list = async (c: Context) => {
     const query = this.query(c, getAttendanceDto);
-    return this.ok(c, await this.service.list(query));
+    return this.ok(c, await this.service.list(query, { ...c.get('user'), role: c.get('role') }));
   };
 
   getByClassAndDate = async (c: Context) => {
@@ -31,7 +31,10 @@ export class AttendanceController extends BaseController<AttendanceAppService> {
     if (!query.classId || !query.fromDate) return this.ok(c, []);
     return this.ok(
       c,
-      await this.service.getByClassAndDate(query.classId, query.fromDate.toISOString()),
+      await this.service.getByClassAndDate(query.classId, query.fromDate.toISOString(), {
+        ...c.get('user'),
+        role: c.get('role'),
+      }),
     );
   };
 

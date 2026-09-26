@@ -4,6 +4,8 @@ import { idSchema } from '../../dtos';
 
 export const leaveStatusSchema = z.enum(['PENDING', 'APPROVED', 'REJECTED']);
 
+export type LeaveStatus = z.infer<typeof leaveStatusSchema>;
+
 export const submitLeaveDto = z
   .object({
     schoolId: idSchema,

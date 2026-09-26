@@ -7,6 +7,7 @@ export const getClassesDto = z.object({
   limit: z.coerce.number().min(1).max(50).optional(),
   direction: z.enum(['next', 'prev']).optional(),
   schoolId: idSchema.optional(),
+  classTeacherId: idSchema.optional(),
   academicYear: z.string().trim().optional(),
   search: z.string().trim().optional(),
 });

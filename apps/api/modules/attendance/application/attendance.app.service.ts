@@ -1,6 +1,7 @@
 import {
   AttendanceAggregate,
   type AttendanceReadModel,
+  type ClassAggregate,
   type IAttendanceRepository,
   type IClassRepository,
   Id,
@@ -15,7 +16,7 @@ import type {
   MarkAttendanceType,
   UpdateAttendanceType,
 } from '@ecomerece/shared';
-import { ConflictError, NotFoundError } from '../../../errors/app-error';
+import { ConflictError, ForbiddenError, NotFoundError } from '../../../errors/app-error';
 import { AttendanceMapper } from '../infra/attendance.mapper';
 import { AttendanceMessages } from '../presentation/attendance.messages';
 
@@ -33,12 +34,22 @@ export class AttendanceAppService {
     if (events.length > 0) await this.eventBus.publish(events);
   }
 
+  private isClassTeacher(clazz: ClassAggregate, userId: string): boolean {
+    return clazz.classTeacherId?.equals(Id.create(userId)) === true;
+  }
+
   /**
    * Mark attendance for a whole class on one day. Idempotent per student:
    * an existing live record for the same student/day/period is re-marked
    * instead of failing the unique index.
+   *
+   * Admins may mark any class. Teachers may only mark classes they are the
+   * class teacher of.
    */
-  async mark(data: MarkAttendanceType, actor: { _id: string }): Promise<AttendanceReadModel[]> {
+  async mark(
+    data: MarkAttendanceType,
+    actor: { _id: string; role: string },
+  ): Promise<AttendanceReadModel[]> {
     const schoolId = Id.create(data.schoolId);
     const classId = Id.create(data.classId);
     const markedBy = Id.create(actor._id);
@@ -50,6 +61,9 @@ export class AttendanceAppService {
     if (this.classRepo) {
       const clazz = await this.classRepo.FindByIdOrThrow(classId);
       if (clazz.isDeleted) throw new ConflictError('This class has been deleted.');
+      if (actor.role !== 'admin' && !this.isClassTeacher(clazz, actor._id)) {
+        throw new ForbiddenError('You can only mark attendance for your own classes.');
+      }
     }
 
     const results: AttendanceAggregate[] = [];
@@ -118,7 +132,25 @@ export class AttendanceAppService {
     return records.filter((r) => !r.isDeleted).map((r) => AttendanceMapper.aggregateToReadModel(r));
   }
 
-  async getByClassAndDate(classId: string, date: string): Promise<AttendanceReadModel[]> {
+  /**
+   * Throws unless the actor may read attendance for this class. Admins pass; a
+   * teacher must be the class teacher, so the read path matches the write path
+   * enforced by `mark`.
+   */
+  private async assertCanReadClass(classId: string, actor: { _id: string; role: string }) {
+    if (actor.role === 'admin' || !this.classRepo) return;
+    const clazz = await this.classRepo.FindByIdOrThrow(Id.create(classId));
+    if (!this.isClassTeacher(clazz, actor._id)) {
+      throw new ForbiddenError('You can only view attendance for your own classes.');
+    }
+  }
+
+  async getByClassAndDate(
+    classId: string,
+    date: string,
+    actor?: { _id: string; role: string },
+  ): Promise<AttendanceReadModel[]> {
+    if (actor) await this.assertCanReadClass(classId, actor);
     const records = await this.attendanceRepo.FindByClassAndDate(
       Id.create(classId),
       new Date(date),
@@ -126,10 +158,14 @@ export class AttendanceAppService {
     return records.filter((r) => !r.isDeleted).map((r) => AttendanceMapper.aggregateToReadModel(r));
   }
 
-  async list(query: GetAttendanceType): Promise<{
+  async list(
+    query: GetAttendanceType,
+    actor?: { _id: string; role: string },
+  ): Promise<{
     data: AttendanceReadModel[];
     meta: { nextCursor: string | null; prevCursor: string | null; hasMore: boolean };
   }> {
+    if (query.classId && actor) await this.assertCanReadClass(query.classId, actor);
     if (!query.classId || !query.fromDate) {
       return { data: [], meta: { nextCursor: null, prevCursor: null, hasMore: false } };
     }

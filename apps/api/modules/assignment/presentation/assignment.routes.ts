@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { adminMiddleware } from '../../../middleware/admin';
+import { adminMiddleware, teacherOrAdminMiddleware } from '../../../middleware/admin';
 import { authMiddleware } from '../../../middleware/auth';
 import { createAssignmentModule } from '../assignment.module';
 
@@ -8,8 +8,8 @@ const { assignmentController } = createAssignmentModule();
 
 assignmentRoutes.get('/', authMiddleware, assignmentController.list);
 assignmentRoutes.get('/:id', authMiddleware, assignmentController.getAssignmentById);
-assignmentRoutes.post('/', authMiddleware, adminMiddleware, assignmentController.create);
-assignmentRoutes.patch('/', authMiddleware, adminMiddleware, assignmentController.update);
+assignmentRoutes.post('/', authMiddleware, teacherOrAdminMiddleware, assignmentController.create);
+assignmentRoutes.patch('/', authMiddleware, teacherOrAdminMiddleware, assignmentController.update);
 assignmentRoutes.patch('/recover', authMiddleware, adminMiddleware, assignmentController.recover);
 assignmentRoutes.delete('/soft', authMiddleware, adminMiddleware, assignmentController.softDelete);
 

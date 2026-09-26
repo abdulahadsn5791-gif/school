@@ -6,15 +6,18 @@ import {
   type IEnrollmentRepository,
   type IEventBus,
   type ISchoolRepository,
+  type IUserRepository,
   Reason,
 } from '@ecomerece/domain';
 import type {
+  ClassRosterStudentDto,
   CreateEnrollmentType,
   DeleteEnrollmentType,
+  GetClassRosterType,
   GetEnrollmentsType,
   UpdateEnrollmentType,
 } from '@ecomerece/shared';
-import { ConflictError, NotFoundError } from '../../../errors/app-error';
+import { ConflictError, ForbiddenError, NotFoundError } from '../../../errors/app-error';
 import { EnrollmentMapper } from '../infra/enrollment.mapper';
 import { EnrollmentMessages } from '../presentation/enrollment.messages';
 
@@ -24,6 +27,7 @@ export class EnrollmentAppService {
     private readonly classRepo: IClassRepository,
     private readonly eventBus: IEventBus,
     private readonly schoolRepo?: ISchoolRepository,
+    private readonly userRepo?: IUserRepository,
   ) {}
 
   private async publishEvents(enrollment: EnrollmentAggregate): Promise<void> {
@@ -98,6 +102,50 @@ export class EnrollmentAppService {
   async getEnrollment(enrollmentId: string): Promise<EnrollmentReadModel> {
     const enrollment = await this.enrollmentRepo.FindByIdOrThrow(Id.create(enrollmentId));
     return EnrollmentMapper.aggregateToReadModel(enrollment);
+  }
+
+  /**
+   * Students on a class, with names resolved. Admins may read any roster;
+   * teachers only the classes they are the class teacher of. This is the only
+   * route that exposes student names to a teacher, so the ownership check is
+   * deliberately strict.
+   */
+  async getClassRoster(
+    data: GetClassRosterType,
+    actor: { _id: string; role: string },
+  ): Promise<ClassRosterStudentDto[]> {
+    const classId = Id.create(data.classId);
+
+    const clazz = await this.classRepo.FindByIdOrThrow(classId);
+    if (clazz.isDeleted) throw new ConflictError('This class has been deleted.');
+    if (actor.role !== 'admin' && clazz.classTeacherId?.equals(Id.create(actor._id)) !== true) {
+      throw new ForbiddenError('You can only view the roster for your own classes.');
+    }
+
+    const enrollments = (await this.enrollmentRepo.FindByClass(classId)).filter(
+      (enrollment) => !enrollment.isDeleted,
+    );
+    if (enrollments.length === 0) return [];
+
+    const students = this.userRepo
+      ? await this.userRepo.FindByIds(enrollments.map((enrollment) => enrollment.studentId))
+      : [];
+    const nameByStudentId = new Map(
+      students.map((student) => [student.id.value, student.name.fullName]),
+    );
+
+    return enrollments
+      .map((enrollment) => ({
+        studentId: enrollment.studentId.value,
+        fullName: nameByStudentId.get(enrollment.studentId.value) ?? 'Unknown student',
+        rollNumber: enrollment.rollNumber,
+      }))
+      .sort((a, b) => {
+        if (a.rollNumber && b.rollNumber) return a.rollNumber.localeCompare(b.rollNumber);
+        if (a.rollNumber) return -1;
+        if (b.rollNumber) return 1;
+        return a.fullName.localeCompare(b.fullName);
+      });
   }
 
   async listEnrollments(query: GetEnrollmentsType): Promise<{

@@ -14,7 +14,7 @@ import type {
   ReviewLeaveType,
   SubmitLeaveType,
 } from '@ecomerece/shared';
-import { ConflictError, NotFoundError } from '../../../errors/app-error';
+import { ConflictError, ForbiddenError, NotFoundError } from '../../../errors/app-error';
 import { LeaveMapper } from '../infra/leave.mapper';
 import { LeaveMessages } from '../presentation/leave.messages';
 
@@ -31,7 +31,16 @@ export class LeaveAppService {
     if (events.length > 0) await this.eventBus.publish(events);
   }
 
-  async submit(data: SubmitLeaveType, actor: { _id: string }): Promise<LeaveReadModel> {
+  async submit(
+    data: SubmitLeaveType,
+    actor: { _id: string; role: string },
+  ): Promise<LeaveReadModel> {
+    // A teacher cannot file as a student (or vice versa) — the declared role
+    // must match the authenticated account.
+    if (actor.role !== 'admin' && data.applicantRole !== actor.role) {
+      throw new ForbiddenError('You can only submit a leave for your own role.');
+    }
+
     const schoolId = Id.create(data.schoolId);
     if (this.schoolRepo) {
       const school = await this.schoolRepo.FindByIdOrThrow(schoolId);
@@ -83,18 +92,30 @@ export class LeaveAppService {
     return LeaveMapper.aggregateToReadModel(leave);
   }
 
-  async getLeave(leaveId: string): Promise<LeaveReadModel> {
+  async getLeave(leaveId: string, actor?: { _id: string; role: string }): Promise<LeaveReadModel> {
     const leave = await this.leaveRepo.FindByIdOrThrow(Id.create(leaveId));
+    // Admins may read any application; anyone else only their own, matching the list scope.
+    if (actor && actor.role !== 'admin' && !leave.applicantId.equals(Id.create(actor._id))) {
+      throw new ForbiddenError('You can only view your own leave applications.');
+    }
     return LeaveMapper.aggregateToReadModel(leave);
   }
 
-  async listLeaves(query: GetLeavesType): Promise<{
+  async listLeaves(
+    query: GetLeavesType,
+    actor: { _id: string; role: string },
+  ): Promise<{
     data: LeaveReadModel[];
     meta: { nextCursor: string | null; prevCursor: string | null; hasMore: boolean };
   }> {
     const filter: Record<string, unknown> = { 'deleted.deleted': false };
     if (query.schoolId) filter.schoolId = query.schoolId;
-    if (query.applicantId) filter.applicantId = query.applicantId;
+    // Teachers only ever see their own applications, regardless of the query.
+    if (actor.role === 'admin') {
+      if (query.applicantId) filter.applicantId = query.applicantId;
+    } else {
+      filter.applicantId = actor._id;
+    }
     if (query.status) filter.status = query.status;
 
     const result = await this.leaveRepo.FindPaginated({

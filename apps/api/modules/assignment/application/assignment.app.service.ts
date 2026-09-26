@@ -16,7 +16,12 @@ import type {
   GetAssignmentsType,
   UpdateAssignmentType,
 } from '@ecomerece/shared';
-import { ConflictError, NotFoundError } from '../../../errors/app-error';
+import {
+  BadRequestError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+} from '../../../errors/app-error';
 import { AssignmentMapper } from '../infra/assignment.mapper';
 import { AssignmentMessages } from '../presentation/assignment.messages';
 
@@ -61,14 +66,26 @@ export class AssignmentAppService {
 
   async createAssignment(
     data: CreateAssignmentType,
-    _actor: { _id: string },
+    actor: { _id: string; role: string },
   ): Promise<AssignmentReadModel> {
     const schoolId = Id.create(data.schoolId);
     const classId = Id.create(data.classId);
     const subjectId = Id.create(data.subjectId);
-    const teacherId = Id.create(data.teacherId);
+    // Teachers may only create assignments attributed to themselves, so the
+    // client-supplied teacherId is ignored for non-admins.
+    if (actor.role === 'admin' && !data.teacherId) {
+      throw new BadRequestError('teacherId is required when creating an assignment as an admin.');
+    }
+    const teacherId = actor.role === 'admin' ? Id.create(data.teacherId) : Id.create(actor._id);
 
     await this.assertRefsExist(schoolId, classId, subjectId, teacherId);
+
+    if (actor.role !== 'admin' && this.classRepo) {
+      const clazz = await this.classRepo.FindByIdOrThrow(classId);
+      if (!clazz.classTeacherId?.equals(Id.create(actor._id))) {
+        throw new ForbiddenError('You can only create assignments for your own classes.');
+      }
+    }
 
     const assignment = AssignmentAggregate.create({
       id: Id.create(),
@@ -92,10 +109,13 @@ export class AssignmentAppService {
 
   async updateAssignment(
     data: UpdateAssignmentType,
-    _actor: { _id: string },
+    actor: { _id: string; role: string },
   ): Promise<AssignmentReadModel> {
     const assignment = await this.assignmentRepo.FindByIdOrThrow(Id.create(data.assignmentId));
     if (assignment.isDeleted) throw new NotFoundError('Assignment not found.');
+    if (actor.role !== 'admin' && !assignment.teacherId.equals(Id.create(actor._id))) {
+      throw new ForbiddenError('You can only edit your own assignments.');
+    }
 
     assignment.update(
       data.title,
@@ -115,16 +135,24 @@ export class AssignmentAppService {
     return AssignmentMapper.aggregateToReadModel(assignment);
   }
 
-  async listAssignments(query: GetAssignmentsType): Promise<{
+  async listAssignments(
+    query: GetAssignmentsType,
+    actor?: { _id: string; role: string },
+  ): Promise<{
     data: AssignmentReadModel[];
     meta: { nextCursor: string | null; prevCursor: string | null; hasMore: boolean };
   }> {
     const filter: Record<string, unknown> = { 'deleted.deleted': false };
     if (query.schoolId) filter.schoolId = query.schoolId;
     if (query.classId) filter.classId = query.classId;
-    if (query.teacherId) filter.teacherId = query.teacherId;
     if (query.subjectId) filter.subjectId = query.subjectId;
     if (query.type) filter.type = query.type;
+    // A teacher only ever sees their own assignments, whatever teacherId they ask for.
+    if (actor && actor.role !== 'admin') {
+      filter.teacherId = actor._id;
+    } else if (query.teacherId) {
+      filter.teacherId = query.teacherId;
+    }
 
     const result = await this.assignmentRepo.FindPaginated({
       filter,

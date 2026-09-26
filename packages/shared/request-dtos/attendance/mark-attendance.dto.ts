@@ -4,6 +4,8 @@ import { idSchema, reasonSchema } from '../../dtos';
 
 export const attendanceStatusSchema = z.enum(['PRESENT', 'ABSENT', 'LATE', 'EXCUSED']);
 
+export type AttendanceStatus = z.infer<typeof attendanceStatusSchema>;
+
 export const attendanceEntrySchema = z.object({
   studentId: idSchema,
   status: attendanceStatusSchema,
