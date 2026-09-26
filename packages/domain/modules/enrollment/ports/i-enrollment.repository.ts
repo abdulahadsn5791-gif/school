@@ -12,6 +12,15 @@ export interface IEnrollmentRepository {
   Create(enrollment: EnrollmentAggregate): Promise<void>;
   Delete(id: Id): Promise<void>;
   Exists(id: Id): Promise<boolean>;
+  FindPaginated(params: {
+    filter?: Record<string, unknown>;
+    cursor?: Id;
+    limit?: number;
+    direction?: 'next' | 'prev';
+  }): Promise<{
+    data: EnrollmentAggregate[];
+    meta: { nextCursor: string | null; prevCursor: string | null; hasMore: boolean };
+  }>;
   /**
    * True when the student/teacher has at least one live enrollment for the given role.
    * Used to guard role changes in UserAppService.

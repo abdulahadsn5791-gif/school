@@ -7,9 +7,15 @@ import {
   type IEventBus,
   Reason,
 } from '@ecomerece/domain';
-import type { CreateEnrollmentType, UpdateEnrollmentType } from '@ecomerece/shared';
+import type {
+  CreateEnrollmentType,
+  DeleteEnrollmentType,
+  GetEnrollmentsType,
+  UpdateEnrollmentType,
+} from '@ecomerece/shared';
 import { ConflictError, NotFoundError } from '../../../errors/app-error';
 import { EnrollmentMapper } from '../infra/enrollment.mapper';
+import { EnrollmentMessages } from '../presentation/enrollment.messages';
 
 export class EnrollmentAppService {
   constructor(
@@ -84,11 +90,35 @@ export class EnrollmentAppService {
     return EnrollmentMapper.aggregateToReadModel(enrollment);
   }
 
-  async softDelete(enrollmentId: string, actor: { _id: string }, reason: string): Promise<void> {
-    const enrollment = await this.enrollmentRepo.FindByIdOrThrow(Id.create(enrollmentId));
-    enrollment.delete(Id.create(actor._id), Reason.create(reason));
+  async listEnrollments(query: GetEnrollmentsType): Promise<{
+    data: EnrollmentReadModel[];
+    meta: { nextCursor: string | null; prevCursor: string | null; hasMore: boolean };
+  }> {
+    const filter: Record<string, unknown> = { 'deleted.deleted': false };
+    if (query.studentId) filter.studentId = query.studentId;
+    if (query.classId) filter.classId = query.classId;
+    if (query.academicYear) filter.academicYear = query.academicYear;
+
+    const result = await this.enrollmentRepo.FindPaginated({
+      filter,
+      cursor: query.cursor ? Id.create(query.cursor) : undefined,
+      limit: query.limit,
+      direction: query.direction,
+    });
+    return {
+      data: result.data.map((enrollment) => EnrollmentMapper.aggregateToReadModel(enrollment)),
+      meta: result.meta,
+    };
+  }
+
+  async softDelete(data: DeleteEnrollmentType, actor: { _id: string }): Promise<string> {
+    const actorId = Id.create(actor._id);
+    const enrollmentId = Id.create(data.enrollmentId);
+    const enrollment = await this.enrollmentRepo.FindByIdOrThrow(enrollmentId);
+    enrollment.delete(actorId, Reason.create(data.reason));
     await this.enrollmentRepo.Save(enrollment);
     await this.publishEvents(enrollment);
+    return EnrollmentMessages.delete(enrollmentId, actorId).message;
   }
 
   async recover(enrollmentId: string, _actor: { _id: string }): Promise<EnrollmentReadModel> {

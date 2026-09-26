@@ -40,3 +40,4 @@ Thumbs.db
 # key/cert safety net
 *.pem
 *.key
+PROGRESS.md

@@ -11,4 +11,13 @@ export interface IClassRepository {
   Create(clazz: ClassAggregate): Promise<void>;
   Delete(id: Id): Promise<void>;
   Exists(id: Id): Promise<boolean>;
+  FindPaginated(params: {
+    filter?: Record<string, unknown>;
+    cursor?: Id;
+    limit?: number;
+    direction?: 'next' | 'prev';
+  }): Promise<{
+    data: ClassAggregate[];
+    meta: { nextCursor: string | null; prevCursor: string | null; hasMore: boolean };
+  }>;
 }

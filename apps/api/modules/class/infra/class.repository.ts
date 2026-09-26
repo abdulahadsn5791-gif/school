@@ -1,4 +1,5 @@
 import type { ClassAggregate, IClassRepository, Id } from '@ecomerece/domain';
+import type { FilterQuery } from 'mongoose';
 import { MongoRepository } from '../../../core/repository/mongo.repository';
 import { NotFoundError } from '../../../errors/app-error';
 import { ClassMapper } from './class.mapper';
@@ -52,5 +53,26 @@ export class ClassRepository extends MongoRepository<ClassPersistence> implement
 
   async Exists(id: Id): Promise<boolean> {
     return !!(await super.exists({ _id: id.value }));
+  }
+
+  async FindPaginated(params: {
+    filter?: Record<string, unknown>;
+    cursor?: Id;
+    limit?: number;
+    direction?: 'next' | 'prev';
+  }): Promise<{
+    data: ClassAggregate[];
+    meta: { nextCursor: string | null; prevCursor: string | null; hasMore: boolean };
+  }> {
+    const result = await this.paginateByCursor({
+      filter: (params.filter ?? {}) as FilterQuery<ClassPersistence>,
+      cursor: params.cursor?.value,
+      limit: params.limit,
+      direction: params.direction,
+    });
+    return {
+      data: result.data.map((doc) => ClassMapper.persistenceToAggregate(doc as ClassPersistence)),
+      meta: result.meta,
+    };
   }
 }

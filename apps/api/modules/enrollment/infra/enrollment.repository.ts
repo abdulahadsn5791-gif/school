@@ -67,6 +67,29 @@ export class EnrollmentRepository
     return !!(await super.exists({ _id: id.value }));
   }
 
+  async FindPaginated(params: {
+    filter?: Record<string, unknown>;
+    cursor?: Id;
+    limit?: number;
+    direction?: 'next' | 'prev';
+  }): Promise<{
+    data: EnrollmentAggregate[];
+    meta: { nextCursor: string | null; prevCursor: string | null; hasMore: boolean };
+  }> {
+    const result = await this.paginateByCursor({
+      filter: (params.filter ?? {}) as FilterQuery<StudentEnrollmentPersistence>,
+      cursor: params.cursor?.value,
+      limit: params.limit,
+      direction: params.direction,
+    });
+    return {
+      data: result.data.map((doc) =>
+        EnrollmentMapper.persistenceToAggregate(doc as StudentEnrollmentPersistence),
+      ),
+      meta: result.meta,
+    };
+  }
+
   async ExistsRoleEnrollment(userId: Id, role: 'student' | 'teacher'): Promise<boolean> {
     const filter: FilterQuery<StudentEnrollmentPersistence> =
       role === 'student'

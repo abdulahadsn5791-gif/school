@@ -60,4 +60,18 @@ export const ClassMapper = {
       createdAt: doc.createdAt,
     };
   },
+
+  aggregateToReadModel(clazz: ClassAggregate): ClassReadModel {
+    return {
+      id: clazz.id.value,
+      schoolId: clazz.schoolId.value,
+      name: clazz.name.value,
+      grade: clazz.grade,
+      section: clazz.section,
+      academicYear: clazz.academicYear,
+      classTeacherId: clazz.classTeacherId?.value ?? null,
+      isDeleted: clazz.isDeleted,
+      createdAt: new Date(),
+    };
+  },
 };
