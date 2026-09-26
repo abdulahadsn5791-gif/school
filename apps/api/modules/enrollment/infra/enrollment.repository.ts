@@ -2,6 +2,8 @@ import type { EnrollmentAggregate, Id, IEnrollmentRepository } from '@ecomerece/
 import type { FilterQuery } from 'mongoose';
 import { MongoRepository } from '../../../core/repository/mongo.repository';
 import { NotFoundError } from '../../../errors/app-error';
+import { AssignmentModel } from '../../assignment/infra/assignment.models';
+import { TimetableModel } from '../../timetable/infra/timetable.models';
 import { EnrollmentMapper } from './enrollment.mapper';
 import { StudentEnrollmentModel, type StudentEnrollmentPersistence } from './enrollment.models';
 
@@ -91,10 +93,25 @@ export class EnrollmentRepository
   }
 
   async ExistsRoleEnrollment(userId: Id, role: 'student' | 'teacher'): Promise<boolean> {
-    const filter: FilterQuery<StudentEnrollmentPersistence> =
-      role === 'student'
-        ? { studentId: userId.value, 'deleted.deleted': false }
-        : { 'deleted.deleted': false, classId: { $exists: false } };
-    return !!(await StudentEnrollmentModel.exists(filter).session(this.session ?? null));
+    if (role === 'student') {
+      const filter: FilterQuery<StudentEnrollmentPersistence> = {
+        studentId: userId.value,
+        'deleted.deleted': false,
+      };
+      return !!(await StudentEnrollmentModel.exists(filter).session(this.session ?? null));
+    }
+
+    // Teachers are linked to classes via live timetable entries or assignments.
+    const [teachesInTimetable, hasAssignments] = await Promise.all([
+      TimetableModel.exists({
+        teacherId: userId.value,
+        'deleted.deleted': false,
+      }).session(this.session ?? null),
+      AssignmentModel.exists({
+        teacherId: userId.value,
+        'deleted.deleted': false,
+      }).session(this.session ?? null),
+    ]);
+    return !!(teachesInTimetable || hasAssignments);
   }
 }

@@ -4,6 +4,7 @@ import {
   type IClassRepository,
   Id,
   type IEventBus,
+  type ISchoolRepository,
   Reason,
 } from '@ecomerece/domain';
 import type {
@@ -20,6 +21,7 @@ export class ClassAppService {
   constructor(
     private readonly classRepo: IClassRepository,
     private readonly eventBus: IEventBus,
+    private readonly schoolRepo?: ISchoolRepository,
   ) {}
 
   private async publishEvents(clazz: ClassAggregate): Promise<void> {
@@ -28,6 +30,13 @@ export class ClassAppService {
   }
 
   async createClass(data: CreateClassType, _actor: { _id: string }): Promise<ClassReadModel> {
+    if (this.schoolRepo) {
+      const school = await this.schoolRepo.FindByIdOrThrow(Id.create(data.schoolId));
+      if (school.isDeleted) {
+        throw new ConflictError('This school has been deleted.');
+      }
+    }
+
     // One live class per school/grade/section/year (schema partial unique index).
     const duplicates = await this.classRepo.FindBySchoolAndYear(
       Id.create(data.schoolId),
@@ -74,9 +83,7 @@ export class ClassAppService {
     return ClassMapper.aggregateToReadModel(clazz);
   }
 
-  async listClasses(
-    query: GetClassesType,
-  ): Promise<{
+  async listClasses(query: GetClassesType): Promise<{
     data: ClassReadModel[];
     meta: { nextCursor: string | null; prevCursor: string | null; hasMore: boolean };
   }> {
@@ -110,7 +117,7 @@ export class ClassAppService {
     return ClassMessages.delete(classId, actorId).message;
   }
 
-  async recover(classId: string, actor: { _id: string }): Promise<ClassReadModel> {
+  async recover(classId: string, _actor: { _id: string }): Promise<ClassReadModel> {
     const clazz = await this.classRepo.FindByIdOrThrow(Id.create(classId));
     clazz.recover();
     await this.classRepo.Save(clazz);

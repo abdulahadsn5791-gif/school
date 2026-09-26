@@ -5,6 +5,7 @@ import {
   Id,
   type IEnrollmentRepository,
   type IEventBus,
+  type ISchoolRepository,
   Reason,
 } from '@ecomerece/domain';
 import type {
@@ -22,6 +23,7 @@ export class EnrollmentAppService {
     private readonly enrollmentRepo: IEnrollmentRepository,
     private readonly classRepo: IClassRepository,
     private readonly eventBus: IEventBus,
+    private readonly schoolRepo?: ISchoolRepository,
   ) {}
 
   private async publishEvents(enrollment: EnrollmentAggregate): Promise<void> {
@@ -31,13 +33,17 @@ export class EnrollmentAppService {
 
   async createEnrollment(
     data: CreateEnrollmentType,
-    actor: { _id: string },
+    _actor: { _id: string },
   ): Promise<EnrollmentReadModel> {
     const studentId = Id.create(data.studentId);
     const classId = Id.create(data.classId);
 
     const clazz = await this.classRepo.FindByIdOrThrow(classId);
     if (clazz.isDeleted) throw new ConflictError('This class has been deleted.');
+    if (this.schoolRepo) {
+      const school = await this.schoolRepo.FindByIdOrThrow(clazz.schoolId);
+      if (school.isDeleted) throw new ConflictError('This school has been deleted.');
+    }
 
     // One live enrollment per student per academic year (schema unique index).
     const existing = await this.enrollmentRepo.FindByStudentAndYear(studentId, clazz.academicYear);
@@ -45,17 +51,21 @@ export class EnrollmentAppService {
       throw new ConflictError('The student is already enrolled for this academic year.');
     }
 
-    const enrollment =
-      existing && existing.isDeleted
-        ? (existing.recover(), existing.assignClass(classId), existing)
-        : EnrollmentAggregate.create({
-            id: Id.create(),
-            schoolId: clazz.schoolId,
-            studentId,
-            classId,
-            rollNumber: data.rollNumber ?? null,
-            academicYear: clazz.academicYear,
-          });
+    let enrollment: EnrollmentAggregate;
+    if (existing?.isDeleted) {
+      existing.recover();
+      existing.assignClass(classId);
+      enrollment = existing;
+    } else {
+      enrollment = EnrollmentAggregate.create({
+        id: Id.create(),
+        schoolId: clazz.schoolId,
+        studentId,
+        classId,
+        rollNumber: data.rollNumber ?? null,
+        academicYear: clazz.academicYear,
+      });
+    }
 
     if (data.rollNumber !== undefined) enrollment.assignRollNumber(data.rollNumber);
 
