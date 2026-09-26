@@ -13,11 +13,12 @@ import { classService } from './class.service';
 
 export const CLASS_QUERY_KEY = ['classes'];
 
-export function useGetClasses(params: GetClassesType) {
+export function useGetClasses(params: GetClassesType, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: [...CLASS_QUERY_KEY, 'list', params],
     queryFn: () => classService.getClasses(getClassesDto.parse(params)),
     placeholderData: (prev) => prev,
+    enabled: options?.enabled ?? true,
   });
 }
 

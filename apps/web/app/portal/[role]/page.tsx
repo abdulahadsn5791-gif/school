@@ -7,10 +7,8 @@ import {
   BarChart3,
   BookOpen,
   CalendarDays,
-  ClipboardCheck,
   ClipboardList,
   type LucideIcon,
-  Presentation,
   Settings,
   ShieldCheck,
   Users,
@@ -32,12 +30,8 @@ const PORTAL_CARDS: Record<string, PortalCard[]> = {
     { icon: BarChart3, title: 'Grades', description: 'Results and progress over time.' },
     { icon: CalendarDays, title: 'Timetable', description: 'Your weekly schedule.' },
   ],
-  teacher: [
-    { icon: Presentation, title: 'My classes', description: 'The classes you teach.' },
-    { icon: Users, title: 'Students', description: 'Rosters and contact details.' },
-    { icon: ClipboardCheck, title: 'Grading', description: 'Submissions awaiting a grade.' },
-    { icon: CalendarDays, title: 'Attendance', description: 'Daily roll call and records.' },
-  ],
+  // `teacher` has its own static route at app/portal/teacher, which shadows this
+  // dynamic segment. Do not add a teacher entry here — it would be unreachable.
   admin: [
     { icon: Users, title: 'People', description: 'Every account on the platform.' },
     { icon: ShieldCheck, title: 'Moderation', description: 'Blocks, bans, and recovery.' },

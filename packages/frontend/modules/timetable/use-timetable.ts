@@ -13,11 +13,15 @@ import { timetableService } from './timetable.service';
 
 export const TIMETABLE_QUERY_KEY = ['timetable'];
 
-export function useGetTimetableEntries(params: GetTimetableEntriesType) {
+export function useGetTimetableEntries(
+  params: GetTimetableEntriesType,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: [...TIMETABLE_QUERY_KEY, 'list', params],
     queryFn: () => timetableService.getEntries(getTimetableEntriesDto.parse(params)),
     placeholderData: (prev) => prev,
+    enabled: options?.enabled ?? true,
   });
 }
 

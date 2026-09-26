@@ -12,6 +12,7 @@ export class ClassService {
   getClasses(params: GetClassesType): Promise<ClassListResponseDto> {
     const searchParams = new URLSearchParams();
     if (params.schoolId) searchParams.set('schoolId', params.schoolId);
+    if (params.classTeacherId) searchParams.set('classTeacherId', params.classTeacherId);
     if (params.academicYear) searchParams.set('academicYear', params.academicYear);
     if (params.search) searchParams.set('search', params.search);
     if (params.cursor) searchParams.set('cursor', params.cursor);

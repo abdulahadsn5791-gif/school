@@ -13,11 +13,12 @@ import { assignmentService } from './assignment.service';
 
 export const ASSIGNMENT_QUERY_KEY = ['assignments'];
 
-export function useGetAssignments(params: GetAssignmentsType) {
+export function useGetAssignments(params: GetAssignmentsType, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: [...ASSIGNMENT_QUERY_KEY, 'list', params],
     queryFn: () => assignmentService.getAssignments(getAssignmentsDto.parse(params)),
     placeholderData: (prev) => prev,
+    enabled: options?.enabled ?? true,
   });
 }
 

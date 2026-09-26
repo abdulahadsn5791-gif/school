@@ -29,6 +29,15 @@ export function useGetEnrollmentById(enrollmentId: string) {
   });
 }
 
+export function useGetClassRoster(classId: string) {
+  return useQuery({
+    queryKey: [...ENROLLMENT_QUERY_KEY, 'roster', classId],
+    queryFn: () => enrollmentService.getClassRoster(classId),
+    enabled: Boolean(classId),
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
 function applyEnrollmentMutationResult(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ENROLLMENT_QUERY_KEY });
 }

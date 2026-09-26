@@ -13,11 +13,12 @@ import { subjectService } from './subject.service';
 
 export const SUBJECT_QUERY_KEY = ['subjects'];
 
-export function useGetSubjects(params: GetSubjectsType) {
+export function useGetSubjects(params: GetSubjectsType, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: [...SUBJECT_QUERY_KEY, 'list', params],
     queryFn: () => subjectService.getSubjects(getSubjectsDto.parse(params)),
     placeholderData: (prev) => prev,
+    enabled: options?.enabled ?? true,
   });
 }
 

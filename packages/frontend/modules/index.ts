@@ -16,5 +16,6 @@ export * from './school';
 export * from './session';
 export * from './student-test';
 export * from './subject';
+export * from './teacher';
 export * from './timetable';
 export * from './user';

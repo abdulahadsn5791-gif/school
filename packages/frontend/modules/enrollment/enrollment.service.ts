@@ -1,4 +1,5 @@
 import type {
+  ClassRosterResponseDto,
   CreateEnrollmentType,
   EnrollmentListResponseDto,
   EnrollmentResponseDto,
@@ -23,6 +24,11 @@ export class EnrollmentService {
 
   getEnrollmentById(id: string): Promise<EnrollmentResponseDto> {
     return http.get<EnrollmentResponseDto>(`/enrollments/${id}`);
+  }
+
+  /** Students on a class with names resolved. Teacher-accessible for their own classes. */
+  getClassRoster(classId: string): Promise<ClassRosterResponseDto> {
+    return http.get<ClassRosterResponseDto>(`/enrollments/roster?classId=${classId}`);
   }
 
   createEnrollment(data: CreateEnrollmentType): Promise<EnrollmentResponseDto> {

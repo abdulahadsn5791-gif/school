@@ -13,11 +13,12 @@ import { periodService } from './period.service';
 
 export const PERIOD_QUERY_KEY = ['periods'];
 
-export function useGetPeriods(params: GetPeriodsType) {
+export function useGetPeriods(params: GetPeriodsType, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: [...PERIOD_QUERY_KEY, 'list', params],
     queryFn: () => periodService.getPeriods(getPeriodsDto.parse(params)),
     placeholderData: (prev) => prev,
+    enabled: options?.enabled ?? true,
   });
 }
 

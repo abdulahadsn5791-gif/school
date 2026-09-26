@@ -15,11 +15,12 @@ import { studentTestService } from './student-test.service';
 
 export const STUDENT_TEST_QUERY_KEY = ['student-tests'];
 
-export function useGetSubmissions(params: GetStudentTestsType) {
+export function useGetSubmissions(params: GetStudentTestsType, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: [...STUDENT_TEST_QUERY_KEY, 'list', params],
     queryFn: () => studentTestService.getSubmissions(getStudentTestsDto.parse(params)),
     placeholderData: (prev) => prev,
+    enabled: options?.enabled ?? true,
   });
 }
 

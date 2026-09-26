@@ -13,11 +13,12 @@ import { leaveService } from './leave.service';
 
 export const LEAVE_QUERY_KEY = ['leaves'];
 
-export function useGetLeaves(params: GetLeavesType) {
+export function useGetLeaves(params: GetLeavesType, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: [...LEAVE_QUERY_KEY, 'list', params],
     queryFn: () => leaveService.getLeaves(getLeavesDto.parse(params)),
     placeholderData: (prev) => prev,
+    enabled: options?.enabled ?? true,
   });
 }
 
