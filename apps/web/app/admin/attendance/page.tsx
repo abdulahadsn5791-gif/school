@@ -1,9 +1,11 @@
 'use client';
 
 import {
+  useGetAdminPaginatedUsers,
   useGetClassDayAttendance,
   useGetClasses,
   useGetClassRoster,
+  useGetSchools,
   useMarkAttendance,
 } from '@ecomerece/frontend';
 import type { AttendanceResponseDto } from '@ecomerece/shared';
@@ -56,6 +58,15 @@ export default function AdminAttendancePage() {
 
 function MarkForm() {
   const markAttendance = useMarkAttendance();
+  // Pickers instead of UUID inputs (new.md §10).
+  const schools = useGetSchools({ limit: 50 });
+  const schoolOptions = schools.data?.data ?? [];
+  const classes = useGetClasses({ limit: 50 });
+  const classOptions = (classes.data?.data ?? []).filter(
+    (clazz) => !form.schoolId || clazz.schoolId === form.schoolId,
+  );
+  const students = useGetAdminPaginatedUsers({ role: 'student', limit: 50 });
+  const studentOptions = students.data?.data ?? [];
   const [form, setForm] = useState({
     schoolId: '',
     classId: '',
@@ -99,19 +110,33 @@ function MarkForm() {
       }}
     >
       <div className="grid grid-cols-3 gap-3">
-        <Field label="School ID">
-          <Input
+        <Field label="School">
+          <Select
             value={form.schoolId}
             onChange={(e) => setForm((f) => ({ ...f, schoolId: e.target.value }))}
             required
-          />
+          >
+            <option value="">{schools.isLoading ? 'Loading schools…' : 'Select a school'}</option>
+            {schoolOptions.map((school) => (
+              <option key={school.id} value={school.id}>
+                {school.name} ({school.code})
+              </option>
+            ))}
+          </Select>
         </Field>
-        <Field label="Class ID">
-          <Input
+        <Field label="Class">
+          <Select
             value={form.classId}
             onChange={(e) => setForm((f) => ({ ...f, classId: e.target.value }))}
             required
-          />
+          >
+            <option value="">{classes.isLoading ? 'Loading classes…' : 'Select a class'}</option>
+            {classOptions.map((clazz) => (
+              <option key={clazz.id} value={clazz.id}>
+                {clazz.name} · {clazz.academicYear}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label="Date">
           <Input
@@ -127,13 +152,21 @@ function MarkForm() {
         {entries.map((entry, i) => (
           <div key={entry.key} className="flex items-end gap-2">
             <div className="flex-1">
-              <Field label={i === 0 ? 'Student ID' : undefined}>
-                <Input
+              <Field label={i === 0 ? 'Student' : undefined}>
+                <Select
                   value={entry.studentId}
                   onChange={(e) => setEntry(i, { studentId: e.target.value })}
-                  placeholder="UUID"
                   required
-                />
+                >
+                  <option value="">
+                    {students.isLoading ? 'Loading students…' : 'Select a student'}
+                  </option>
+                  {studentOptions.map((student) => (
+                    <option key={student.id} value={student.id}>
+                      {student.fullName}
+                    </option>
+                  ))}
+                </Select>
               </Field>
             </div>
             <div className="w-36">

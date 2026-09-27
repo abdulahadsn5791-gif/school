@@ -8,7 +8,15 @@ export const clockTimeSchema = z
   .regex(/^\d{1,2}:\d{2}(:\d{2})?\s?(AM|PM)?$/i, 'Time must look like 08:00 or 08:00 AM');
 
 export const createPeriodDto = z.object({
-  schoolId: idSchema,
+  schoolId: idSchema.optional(),
+  /** Human key (new.md §5): the engine derives schoolId from this when sent. */
+  schoolCode: z
+    .string()
+    .trim()
+    .min(2)
+    .max(32)
+    .regex(/^[A-Za-z0-9-]+$/, 'School code may only contain letters, numbers and dashes.')
+    .optional(),
   name: z
     .string()
     .trim()

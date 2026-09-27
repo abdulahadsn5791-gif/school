@@ -2,12 +2,14 @@
 
 import {
   useCreateClass,
+  useGetAdminPaginatedUsers,
   useGetClasses,
+  useGetSchools,
   useSoftDeleteClass,
   useUpdateClass,
 } from '@ecomerece/frontend';
 import type { ClassResponseDto, GetClassesType } from '@ecomerece/shared';
-import { Badge, Button, Field, Input, Modal } from '@ecomerece/ui';
+import { Badge, Button, Field, Input, Modal, Select } from '@ecomerece/ui';
 import { ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react';
 import { useState } from 'react';
 
@@ -198,6 +200,13 @@ function ClassForm({
 }) {
   const createClass = useCreateClass();
   const updateClass = useUpdateClass();
+  // Schools come from the engine's list; the form sends the chosen school's id.
+  const schools = useGetSchools({ limit: 50 });
+  const schoolOptions = (schools.data?.data ?? []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    code: s.code,
+  }));
   const [form, setForm] = useState({
     schoolId: initial?.schoolId ?? '',
     name: initial?.name ?? '',
@@ -206,6 +215,8 @@ function ClassForm({
     academicYear: initial?.academicYear ?? '',
     classTeacherId: initial?.classTeacherId ?? '',
   });
+  const teachers = useGetAdminPaginatedUsers({ role: 'teacher', limit: 50 });
+  const teacherOptions = teachers.data?.data ?? [];
   const pending = createClass.isPending || updateClass.isPending;
   const error = createClass.error ?? updateClass.error;
 
@@ -247,12 +258,19 @@ function ClassForm({
     >
       {mode === 'create' && (
         <>
-          <Field label="School ID" hint="UUID of the school">
-            <Input
+          <Field label="School">
+            <Select
               value={form.schoolId}
               onChange={(e) => setForm((f) => ({ ...f, schoolId: e.target.value }))}
               required
-            />
+            >
+              <option value="">{schools.isLoading ? 'Loading schools…' : 'Select a school'}</option>
+              {schoolOptions.map((school) => (
+                <option key={school.id} value={school.id}>
+                  {school.name} ({school.code})
+                </option>
+              ))}
+            </Select>
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Grade" hint="e.g. Grade 5">
@@ -287,11 +305,18 @@ function ClassForm({
           required
         />
       </Field>
-      <Field label="Class teacher ID" hint="Optional user UUID">
-        <Input
+      <Field label="Class teacher" hint="Optional">
+        <Select
           value={form.classTeacherId}
           onChange={(e) => setForm((f) => ({ ...f, classTeacherId: e.target.value }))}
-        />
+        >
+          <option value="">{teachers.isLoading ? 'Loading teachers…' : 'No class teacher'}</option>
+          {teacherOptions.map((teacher) => (
+            <option key={teacher.id} value={teacher.id}>
+              {teacher.fullName}
+            </option>
+          ))}
+        </Select>
       </Field>
       {error && <p className="text-sm text-danger">{error.message}</p>}
       <div className="flex justify-end gap-2 pt-2">

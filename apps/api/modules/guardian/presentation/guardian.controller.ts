@@ -7,12 +7,13 @@ import {
   updateGuardianDto,
 } from '@ecomerece/shared';
 import type { Context } from 'hono';
+import { requireActor } from '../../../core/actor/actor-context';
 import { BaseController } from '../../../core/controller/base.controller';
 import type { GuardianAppService } from '../application/guardian.app.service';
 
 export class GuardianController extends BaseController<GuardianAppService> {
   create = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, createGuardianDto);
     return this.created(c, await this.service.createGuardian(data, actor));
   };
@@ -28,20 +29,20 @@ export class GuardianController extends BaseController<GuardianAppService> {
   };
 
   update = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, updateGuardianDto);
     return this.ok(c, await this.service.updateGuardian(data, actor));
   };
 
   softDelete = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, deleteGuardianDto);
     const message = await this.service.softDelete(data, actor);
     return this.ok(c, { message });
   };
 
   recover = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, guardianIdDto);
     return this.ok(c, await this.service.recover(data.guardianId, actor));
   };

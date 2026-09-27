@@ -1,7 +1,6 @@
-import type { AttendanceResponseDto, AttendanceStatus } from '@ecomerece/shared';
+import type { AttendanceStatus } from '@ecomerece/shared';
 import { useCallback, useMemo, useState } from 'react';
-import { useGetClassDayAttendance, useMarkAttendance } from '../attendance';
-import { useGetClassRoster } from '../enrollment';
+import { useAttendanceRegisterScreen, useMarkAttendance } from '../attendance';
 import { useTeacherContext } from './use-teacher-context';
 
 export const ATTENDANCE_STATUSES: AttendanceStatus[] = ['PRESENT', 'ABSENT', 'LATE', 'EXCUSED'];
@@ -42,14 +41,13 @@ export interface TeacherRegister {
 /**
  * The attendance register for one class on one day.
  *
- * Rows are prefilled from any records the API already holds for that day, because
- * marking is idempotent server-side: re-saving a day updates the existing rows
- * rather than tripping the unique index.
+ * The engine composes the screen (new.md §6): one request returns the roster
+ * with each student's existing record for the day already attached. Marking is
+ * idempotent server-side, so re-saving a day updates the existing rows rather
+ * than tripping the unique index.
  */
 export function useTeacherRegister(classId: string, date: string): TeacherRegister {
   const { schoolId } = useTeacherContext();
-  const roster = useGetClassRoster(classId);
-  const existing = useGetClassDayAttendance(classId, date);
   const markAttendance = useMarkAttendance();
 
   const [overrides, setOverrides] = useState<Record<string, RegisterOverride>>({});
@@ -66,28 +64,23 @@ export function useTeacherRegister(classId: string, date: string): TeacherRegist
     setIsSaved(false);
   }
 
-  const students = roster.data ?? [];
+  const screen = useAttendanceRegisterScreen(classId, date);
 
-  const existingByStudent = useMemo(() => {
-    const map = new Map<string, AttendanceResponseDto>();
-    for (const record of existing.data ?? []) map.set(record.studentId, record);
-    return map;
-  }, [existing.data]);
+  const students = screen.data?.rows ?? [];
 
   const entries = useMemo<RegisterEntry[]>(
     () =>
-      students.map((student) => {
-        const prior = existingByStudent.get(student.studentId);
-        const override = overrides[student.studentId];
+      students.map((row) => {
+        const override = overrides[row.studentId];
         return {
-          studentId: student.studentId,
-          fullName: student.fullName,
-          rollNumber: student.rollNumber,
-          status: override?.status ?? prior?.status ?? 'PRESENT',
-          remark: override?.remark ?? prior?.remark ?? '',
+          studentId: row.studentId,
+          fullName: row.fullName,
+          rollNumber: row.rollNumber,
+          status: override?.status ?? row.record?.status ?? 'PRESENT',
+          remark: override?.remark ?? row.record?.remark ?? '',
         };
       }),
-    [students, overrides, existingByStudent],
+    [students, overrides],
   );
 
   const patch = useCallback((studentId: string, next: RegisterOverride) => {
@@ -111,8 +104,7 @@ export function useTeacherRegister(classId: string, date: string): TeacherRegist
       setIsSaved(false);
       setOverrides((prev) => {
         const next = { ...prev };
-        for (const student of students)
-          next[student.studentId] = { ...next[student.studentId], status };
+        for (const row of students) next[row.studentId] = { ...next[row.studentId], status };
         return next;
       });
     },
@@ -152,10 +144,10 @@ export function useTeacherRegister(classId: string, date: string): TeacherRegist
 
   return {
     entries,
-    isLoading: roster.isLoading || existing.isLoading,
-    isError: roster.isError || existing.isError,
-    error: (roster.error as Error | null) ?? (existing.error as Error | null),
-    isAlreadyMarked: (existing.data?.length ?? 0) > 0,
+    isLoading: screen.isLoading,
+    isError: screen.isError,
+    error: (screen.error as Error | null) ?? null,
+    isAlreadyMarked: screen.data?.isAlreadyMarked ?? false,
     setStatus,
     setRemark,
     applyToAll,

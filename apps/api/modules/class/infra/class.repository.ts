@@ -22,6 +22,12 @@ export class ClassRepository extends MongoRepository<ClassPersistence> implement
     return ClassMapper.persistenceToAggregate(doc);
   }
 
+  async FindByIds(ids: Id[]): Promise<ClassAggregate[]> {
+    if (ids.length === 0) return [];
+    const docs = await super.find({ _id: { $in: ids.map((id) => id.value) } });
+    return docs.map((doc) => ClassMapper.persistenceToAggregate(doc));
+  }
+
   async FindBySchool(schoolId: Id): Promise<ClassAggregate[]> {
     const docs = await super.find({ schoolId: schoolId.value });
     return docs.map((doc) => ClassMapper.persistenceToAggregate(doc));

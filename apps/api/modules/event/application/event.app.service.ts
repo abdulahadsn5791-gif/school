@@ -1,11 +1,12 @@
 import {
   CalendarEventAggregate,
   type CalendarEventReadModel,
-  type IClassRepository,
+  GetClassSummaryByIdQuery,
+  GetSchoolSummaryByIdQuery,
   Id,
   type IEventBus,
   type IEventRepository,
-  type ISchoolRepository,
+  type IQueryBus,
   Reason,
 } from '@ecomerece/domain';
 import type {
@@ -14,6 +15,7 @@ import type {
   GetEventsType,
   UpdateEventType,
 } from '@ecomerece/shared';
+import type { Actor } from '../../../core/actor/actor';
 import { ConflictError, NotFoundError } from '../../../errors/app-error';
 import { EventMapper } from '../infra/event.mapper';
 import { EventMessages } from '../presentation/event.messages';
@@ -22,8 +24,7 @@ export class EventAppService {
   constructor(
     private readonly eventRepo: IEventRepository,
     private readonly eventBus: IEventBus,
-    private readonly schoolRepo?: ISchoolRepository,
-    private readonly classRepo?: IClassRepository,
+    private readonly queryBus: IQueryBus,
   ) {}
 
   private async publishEvents(event: CalendarEventAggregate): Promise<void> {
@@ -31,19 +32,16 @@ export class EventAppService {
     if (events.length > 0) await this.eventBus.publish(events);
   }
 
-  async createEvent(
-    data: CreateEventType,
-    _actor: { _id: string },
-  ): Promise<CalendarEventReadModel> {
+  async createEvent(data: CreateEventType, actor: Actor): Promise<CalendarEventReadModel> {
+    actor.assertAdmin();
+
     const schoolId = Id.create(data.schoolId);
-    if (this.schoolRepo) {
-      const school = await this.schoolRepo.FindByIdOrThrow(schoolId);
-      if (school.isDeleted) throw new ConflictError('This school has been deleted.');
-    }
+    const school = await this.queryBus.execute(new GetSchoolSummaryByIdQuery(schoolId.value));
+    if (school.isDeleted) throw new ConflictError('This school has been deleted.');
 
     const classId = data.classId ? Id.create(data.classId) : null;
-    if (classId && this.classRepo) {
-      const clazz = await this.classRepo.FindByIdOrThrow(classId);
+    if (classId) {
+      const clazz = await this.queryBus.execute(new GetClassSummaryByIdQuery(classId.value));
       if (clazz.isDeleted) throw new ConflictError('This class has been deleted.');
     }
 
@@ -63,10 +61,9 @@ export class EventAppService {
     return EventMapper.aggregateToReadModel(event);
   }
 
-  async updateEvent(
-    data: UpdateEventType,
-    _actor: { _id: string },
-  ): Promise<CalendarEventReadModel> {
+  async updateEvent(data: UpdateEventType, actor: Actor): Promise<CalendarEventReadModel> {
+    actor.assertAdmin();
+
     const event = await this.eventRepo.FindByIdOrThrow(Id.create(data.eventId));
     if (event.isDeleted) throw new NotFoundError('Event not found.');
 
@@ -108,8 +105,10 @@ export class EventAppService {
     };
   }
 
-  async softDelete(data: DeleteEventType, actor: { _id: string }): Promise<string> {
-    const actorId = Id.create(actor._id);
+  async softDelete(data: DeleteEventType, actor: Actor): Promise<string> {
+    actor.assertAdmin();
+
+    const actorId = actor.id;
     const eventId = Id.create(data.eventId);
     const event = await this.eventRepo.FindByIdOrThrow(eventId);
     event.delete(actorId, Reason.create(data.reason));
@@ -118,7 +117,9 @@ export class EventAppService {
     return EventMessages.delete(eventId, actorId).message;
   }
 
-  async recover(eventId: string, _actor: { _id: string }): Promise<CalendarEventReadModel> {
+  async recover(eventId: string, actor: Actor): Promise<CalendarEventReadModel> {
+    actor.assertAdmin();
+
     const event = await this.eventRepo.FindByIdOrThrow(Id.create(eventId));
     event.recover();
     await this.eventRepo.Save(event);

@@ -8,6 +8,8 @@ export interface IAssignmentRepository {
   FindByClass(schoolId: Id, classId: Id, subjectId?: Id): Promise<AssignmentAggregate[]>;
   /** Live assignments assigned by a teacher (optionally one subject). */
   FindByTeacher(schoolId: Id, teacherId: Id, subjectId?: Id): Promise<AssignmentAggregate[]>;
+  /** Live assignments a teacher owns, any school/year — capped for screen reads. */
+  FindByTeacherAllSchools(teacherId: Id, limit?: number): Promise<AssignmentAggregate[]>;
   Save(assignment: AssignmentAggregate): Promise<void>;
   Create(assignment: AssignmentAggregate): Promise<void>;
   Delete(id: Id): Promise<void>;

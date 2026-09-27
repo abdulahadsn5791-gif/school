@@ -1,11 +1,12 @@
 import {
   type AssignmentAggregate,
+  GetSchoolSummaryByIdQuery,
+  GetUserSummaryByIdQuery,
   type IAssignmentRepository,
   Id,
   type IEventBus,
-  type ISchoolRepository,
+  type IQueryBus,
   type IStudentTestRepository,
-  type IUserRepository,
   Reason,
   StudentTestAggregate,
   type StudentTestReadModel,
@@ -18,6 +19,7 @@ import type {
   MarkMissedType,
   SubmitStudentTestType,
 } from '@ecomerece/shared';
+import type { Actor } from '../../../core/actor/actor';
 import {
   BadRequestError,
   ConflictError,
@@ -31,9 +33,8 @@ export class StudentTestAppService {
   constructor(
     private readonly studentTestRepo: IStudentTestRepository,
     private readonly eventBus: IEventBus,
-    private readonly schoolRepo?: ISchoolRepository,
+    private readonly queryBus: IQueryBus,
     private readonly assignmentRepo?: IAssignmentRepository,
-    private readonly userRepo?: IUserRepository,
   ) {}
 
   private async publishEvents(submission: StudentTestAggregate): Promise<void> {
@@ -42,25 +43,20 @@ export class StudentTestAppService {
   }
 
   /** Issue a PENDING submission slot for one student on one assignment. */
-  async createSubmission(
-    data: CreateStudentTestType,
-    _actor: { _id: string },
-  ): Promise<StudentTestReadModel> {
+  async createSubmission(data: CreateStudentTestType, actor: Actor): Promise<StudentTestReadModel> {
+    actor.assertRoleIn('admin', 'teacher');
+
     const schoolId = Id.create(data.schoolId);
     const assignmentId = Id.create(data.assignmentId);
     const studentId = Id.create(data.studentId);
 
-    if (this.schoolRepo) {
-      const school = await this.schoolRepo.FindByIdOrThrow(schoolId);
-      if (school.isDeleted) throw new ConflictError('This school has been deleted.');
-    }
+    const school = await this.queryBus.execute(new GetSchoolSummaryByIdQuery(schoolId.value));
+    if (school.isDeleted) throw new ConflictError('This school has been deleted.');
     if (this.assignmentRepo) {
       await this.assignmentRepo.FindByIdOrThrow(assignmentId);
     }
-    if (this.userRepo) {
-      const student = await this.userRepo.FindByIdOrThrow(studentId);
-      if (student.deleted.isDeleted) throw new ConflictError('This student is not available.');
-    }
+    const student = await this.queryBus.execute(new GetUserSummaryByIdQuery(studentId.value));
+    if (student.isDeleted) throw new ConflictError('This student is not available.');
 
     const existing = await this.studentTestRepo.FindByAssignmentAndStudent(assignmentId, studentId);
     if (existing && !existing.isDeleted) {
@@ -79,10 +75,10 @@ export class StudentTestAppService {
     return StudentTestMapper.aggregateToReadModel(submission);
   }
 
-  async submit(data: SubmitStudentTestType, actor: { _id: string }): Promise<StudentTestReadModel> {
+  async submit(data: SubmitStudentTestType, actor: Actor): Promise<StudentTestReadModel> {
     const submission = await this.studentTestRepo.FindByIdOrThrow(Id.create(data.studentTestId));
     if (submission.isDeleted) throw new NotFoundError('Submission not found.');
-    if (!submission.studentId.equals(Id.create(actor._id))) {
+    if (!submission.studentId.equals(actor.id)) {
       throw new ConflictError('You can only submit your own work.');
     }
 
@@ -97,10 +93,7 @@ export class StudentTestAppService {
    * Grade a submission. Admins may grade anything; teachers may only grade
    * submissions belonging to an assignment they own.
    */
-  async grade(
-    data: GradeStudentTestType,
-    actor: { _id: string; role: string },
-  ): Promise<StudentTestReadModel> {
+  async grade(data: GradeStudentTestType, actor: Actor): Promise<StudentTestReadModel> {
     const submission = await this.studentTestRepo.FindByIdOrThrow(Id.create(data.studentTestId));
     if (submission.isDeleted) throw new NotFoundError('Submission not found.');
     const assignment = await this.assertCanGrade(submission, actor);
@@ -113,17 +106,14 @@ export class StudentTestAppService {
       );
     }
 
-    submission.grade(data.marksObtained, data.teacherFeedback ?? null, Id.create(actor._id));
+    submission.grade(data.marksObtained, data.teacherFeedback ?? null, actor.id);
 
     await this.studentTestRepo.Save(submission);
     await this.publishEvents(submission);
     return StudentTestMapper.aggregateToReadModel(submission);
   }
 
-  async markMissed(
-    data: MarkMissedType,
-    actor: { _id: string; role: string },
-  ): Promise<StudentTestReadModel> {
+  async markMissed(data: MarkMissedType, actor: Actor): Promise<StudentTestReadModel> {
     const submission = await this.studentTestRepo.FindByIdOrThrow(Id.create(data.studentTestId));
     if (submission.isDeleted) throw new NotFoundError('Submission not found.');
     await this.assertCanGrade(submission, actor);
@@ -141,12 +131,12 @@ export class StudentTestAppService {
    */
   private async assertCanGrade(
     submission: StudentTestAggregate,
-    actor: { _id: string; role: string },
+    actor: Actor,
   ): Promise<AssignmentAggregate | null> {
     if (!this.assignmentRepo) return null;
 
     const assignment = await this.assignmentRepo.FindByIdOrThrow(submission.assignmentId);
-    if (actor.role !== 'admin' && !assignment.teacherId.equals(Id.create(actor._id))) {
+    if (actor.role !== 'admin' && !assignment.teacherId.equals(actor.id)) {
       throw new ForbiddenError('You can only grade submissions for your own assignments.');
     }
     return assignment;
@@ -159,7 +149,7 @@ export class StudentTestAppService {
 
   async listSubmissions(
     query: GetStudentTestsType,
-    actor?: { _id: string; role: string },
+    actor?: Actor,
   ): Promise<{
     data: StudentTestReadModel[];
     meta: { nextCursor: string | null; prevCursor: string | null; hasMore: boolean };
@@ -175,8 +165,8 @@ export class StudentTestAppService {
     if (actor && actor.role !== 'admin') {
       if (!query.schoolId || !this.assignmentRepo) return { data: [], meta: empty };
       const mine = await this.assignmentRepo.FindByTeacher(
-        Id.create(query.schoolId),
-        Id.create(actor._id),
+        query.schoolId ? Id.create(query.schoolId) : actor.id,
+        actor.id,
       );
       const owned = mine.map((assignment) => assignment.id);
       const scoped = query.assignmentId
@@ -200,8 +190,10 @@ export class StudentTestAppService {
     };
   }
 
-  async softDelete(data: DeleteStudentTestType, actor: { _id: string }): Promise<string> {
-    const actorId = Id.create(actor._id);
+  async softDelete(data: DeleteStudentTestType, actor: Actor): Promise<string> {
+    actor.assertAdmin();
+
+    const actorId = actor.id;
     const submissionId = Id.create(data.studentTestId);
     const submission = await this.studentTestRepo.FindByIdOrThrow(submissionId);
     submission.delete(actorId, Reason.create(data.reason));

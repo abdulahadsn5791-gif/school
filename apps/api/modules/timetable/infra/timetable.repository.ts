@@ -56,6 +56,20 @@ export class TimetableRepository
     return docs.map((doc) => TimetableMapper.persistenceToAggregate(doc));
   }
 
+  async FindByTeacherAllYears(teacherId: Id, limit?: number): Promise<TimetableEntryAggregate[]> {
+    const query = this.model
+      .find({
+        teacherId: teacherId.value,
+        'deleted.deleted': false,
+      })
+      .sort({ createdAt: -1, _id: -1 })
+      .session(this.session ?? null)
+      .lean();
+    if (limit !== undefined) query.limit(limit);
+    const docs = (await query) as TimetablePersistence[];
+    return docs.map((doc) => TimetableMapper.persistenceToAggregate(doc));
+  }
+
   async FindSlotOccupant(params: {
     schoolId: Id;
     academicYear: string;

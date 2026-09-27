@@ -4,11 +4,20 @@ import type {
   EnrollmentListResponseDto,
   EnrollmentResponseDto,
   GetEnrollmentsType,
+  StudentNameIndexEntryDto,
   UpdateEnrollmentType,
 } from '@ecomerece/shared';
 import { http } from '../../lib';
 
 export class EnrollmentService {
+  /** Composed screen (new.md §6): batched student names across classes, one request. */
+  getStudentNameIndex(classIds: string[]): Promise<StudentNameIndexEntryDto[]> {
+    const query = classIds.filter(Boolean).join(',');
+    return http.get<StudentNameIndexEntryDto[]>(
+      `/enrollments/student-names?classIds=${encodeURIComponent(query)}`,
+    );
+  }
+
   getEnrollments(params: GetEnrollmentsType): Promise<EnrollmentListResponseDto> {
     const searchParams = new URLSearchParams();
     if (params.studentId) searchParams.set('studentId', params.studentId);

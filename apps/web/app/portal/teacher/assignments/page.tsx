@@ -2,9 +2,10 @@
 
 import {
   useCreateAssignment,
-  useGetAssignments,
   useGetSubjects,
+  useTeacherAssignmentsIndex,
   useTeacherContext,
+  useUpdateAssignment,
 } from '@ecomerece/frontend';
 import type { AssignmentType } from '@ecomerece/shared';
 import {
@@ -18,10 +19,9 @@ import {
   Spinner,
   Textarea,
 } from '@ecomerece/ui';
-import { AlertTriangle, ClipboardList, Plus } from 'lucide-react';
+import { AlertTriangle, Check, ClipboardList, Plus } from 'lucide-react';
 import { useState } from 'react';
 
-const PAGE_SIZE = 20;
 const ASSIGNMENT_TYPES: AssignmentType[] = ['homework', 'test', 'oral'];
 
 function todayIso(): string {
@@ -68,7 +68,7 @@ export default function TeacherAssignmentsPage() {
             classOptions={classes.map((c) => ({ id: c.id, name: c.name }))}
             schoolId={schoolId}
           />
-          <AssignmentList classOptions={classes.map((c) => ({ id: c.id, name: c.name }))} />
+          <AssignmentList />
         </>
       )}
     </div>
@@ -248,25 +248,15 @@ function NewAssignment({
   );
 }
 
-function AssignmentList({ classOptions }: { classOptions: Array<{ id: string; name: string }> }) {
-  const { schoolId, teacherId } = useTeacherContext();
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
+function AssignmentList() {
   const [type, setType] = useState<AssignmentType | ''>('');
+  // One card is editable at a time, so at most one edit form is mounted.
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  const list = useGetAssignments({
-    schoolId,
-    teacherId,
-    cursor,
-    limit: PAGE_SIZE,
-    direction: 'next',
-    type: type || undefined,
-  });
-  const subjects = useGetSubjects({ schoolId, limit: 50 }, { enabled: Boolean(schoolId) });
-
-  const classNameById = new Map(classOptions.map((c) => [c.id, c.name]));
-  const subjectNameById = new Map((subjects.data?.data ?? []).map((s) => [s.id, s.name]));
-  const rows = list.data?.data ?? [];
-  const meta = list.data?.meta ?? null;
+  // One composed screen query (new.md §6): labels resolved by the engine.
+  const index = useTeacherAssignmentsIndex();
+  const listIsLoading = index.isLoading;
+  const rows = type ? index.all.filter((assignment) => assignment.type === type) : index.all;
 
   return (
     <>
@@ -278,7 +268,6 @@ function AssignmentList({ classOptions }: { classOptions: Array<{ id: string; na
             value={type}
             onChange={(e) => {
               setType(e.target.value as AssignmentType | '');
-              setCursor(undefined);
             }}
           >
             <option value="">All types</option>
@@ -291,7 +280,7 @@ function AssignmentList({ classOptions }: { classOptions: Array<{ id: string; na
         </div>
       </div>
 
-      {rows.length === 0 && !list.isLoading ? (
+      {rows.length === 0 && !listIsLoading ? (
         <div className="mt-4">
           <EmptyState
             icon={ClipboardList}
@@ -315,15 +304,9 @@ function AssignmentList({ classOptions }: { classOptions: Array<{ id: string; na
                       <Badge tone="neutral">{assignment.type}</Badge>
                     </div>
                     <p className="mt-1 text-sm text-ink-3">
-                      {classNameById.get(assignment.classId) ?? 'Unknown class'} ·{' '}
-                      {subjectNameById.get(assignment.subjectId) ?? 'Unknown subject'} ·{' '}
-                      {assignment.totalMarks} marks
+                      {assignment.className} · {assignment.subjectName} · {assignment.totalMarks}{' '}
+                      marks
                     </p>
-                    {assignment.description && (
-                      <p className="mt-2 line-clamp-2 text-sm text-ink-2">
-                        {assignment.description}
-                      </p>
-                    )}
                   </div>
 
                   <div className="text-right">
@@ -343,34 +326,152 @@ function AssignmentList({ classOptions }: { classOptions: Array<{ id: string; na
                             : `due in ${daysLeft}d`}
                       </p>
                     )}
+                    <div className="mt-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setEditingId(editingId === assignment.id ? null : assignment.id)
+                        }
+                      >
+                        {editingId === assignment.id ? 'Cancel' : 'Edit'}
+                      </Button>
+                    </div>
                   </div>
                 </div>
+
+                {editingId === assignment.id && (
+                  <EditAssignmentForm
+                    assignmentId={assignment.id}
+                    title={assignment.title}
+                    totalMarks={assignment.totalMarks}
+                    onDone={() => setEditingId(null)}
+                  />
+                )}
               </Card>
             );
           })}
         </div>
       )}
 
-      {list.isError && <p className="mt-3 text-sm text-danger">{(list.error as Error)?.message}</p>}
+      {index.isError && (
+        <p className="mt-3 text-sm text-danger">{(index.error as Error)?.message}</p>
+      )}
+    </>
+  );
+}
 
-      <div className="mt-4 flex items-center justify-end gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={!cursor}
-          onClick={() => setCursor(meta?.prevCursor ?? undefined)}
+/**
+ * Edits the title, due date and total marks of one assignment. The screen index
+ * does not carry the description, so editing it means clearing (omit) or
+ * rewriting it — matching the aggregate's `update` contract. Class, subject
+ * and type are immutable once the work is set.
+ */
+function EditAssignmentForm({
+  assignmentId,
+  title: initialTitle,
+  totalMarks: initialTotalMarks,
+  onDone,
+}: {
+  assignmentId: string;
+  title: string;
+  totalMarks: number;
+  onDone: () => void;
+}) {
+  const updateAssignment = useUpdateAssignment();
+
+  const [title, setTitle] = useState(initialTitle);
+  const [dueDate, setDueDate] = useState(todayIso());
+  const [totalMarks, setTotalMarks] = useState(String(initialTotalMarks));
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const marks = Number(totalMarks);
+  const titleOk = title.trim().length >= 3;
+  const marksOk = Number.isFinite(marks) && marks >= 1 && marks <= 1000;
+  const isValid = titleOk && marksOk && Boolean(dueDate);
+
+  const submit = () => {
+    setFormError(null);
+    if (title.trim().length < 3) {
+      setFormError('The title must be at least 3 characters.');
+      return;
+    }
+    if (!Number.isFinite(marks) || marks < 1 || marks > 1000) {
+      setFormError('Total marks must be between 1 and 1000.');
+      return;
+    }
+    updateAssignment.mutate(
+      {
+        assignmentId,
+        title: title.trim(),
+        // Omitted description and due date leave those fields untouched;
+        // the screen index does not carry them for a full edit.
+        dueDate: new Date(dueDate),
+        totalMarks: marks,
+      },
+      { onSuccess: onDone },
+    );
+  };
+
+  const error = formError ?? (updateAssignment.error as Error | null)?.message ?? null;
+
+  return (
+    <div className="mt-4 border-t border-line/10 pt-4">
+      <p className="text-xs text-ink-3">Class, subject and type are fixed once the work is set.</p>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Field label="Title" htmlFor={`edit-title-${assignmentId}`} className="sm:col-span-2">
+          <Input
+            id={`edit-title-${assignmentId}`}
+            value={title}
+            maxLength={150}
+            invalid={!titleOk}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </Field>
+
+        <Field label="Due date" htmlFor={`edit-due-${assignmentId}`}>
+          <Input
+            id={`edit-due-${assignmentId}`}
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+          />
+        </Field>
+
+        <Field
+          label="Total marks"
+          htmlFor={`edit-marks-${assignmentId}`}
+          error={!marksOk ? 'Must be between 1 and 1000.' : undefined}
         >
-          Previous
+          <Input
+            id={`edit-marks-${assignmentId}`}
+            type="number"
+            min={1}
+            max={1000}
+            value={totalMarks}
+            invalid={!marksOk}
+            onChange={(e) => setTotalMarks(e.target.value)}
+          />
+        </Field>
+      </div>
+
+      <div className="mt-4 flex items-center gap-2">
+        <Button
+          variant="primary"
+          size="sm"
+          isLoading={updateAssignment.isPending}
+          disabled={!isValid}
+          onClick={submit}
+        >
+          <Check className="size-4" /> Save changes
         </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={!meta?.hasMore}
-          onClick={() => setCursor(meta?.nextCursor ?? undefined)}
-        >
-          Next
+        <Button variant="ghost" size="sm" onClick={onDone} disabled={updateAssignment.isPending}>
+          Cancel
         </Button>
       </div>
-    </>
+
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
+    </div>
   );
 }

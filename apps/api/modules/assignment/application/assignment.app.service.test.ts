@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { AssignmentAggregate, ClassAggregate, Id } from '@ecomerece/domain';
+import { Actor } from '../../../core/actor/actor';
 import { InMemoryEventBus } from '../../../core/infrastructure/buses/in-memory-event-bus';
 import {
   MemoryAssignmentRepository,
@@ -11,6 +12,17 @@ const SCHOOL_ID = Id.create();
 const TEACHER_A = Id.create();
 const TEACHER_B = Id.create();
 const SUBJECT_ID = Id.create();
+
+/** Test actor builder — mirrors what auth/admin middleware produces. */
+const asActor = (id: Id | string, role: 'teacher' | 'admin'): Actor =>
+  new Actor({
+    id: typeof id === 'string' ? Id.create(id) : id,
+    role,
+    tier: role === 'admin' ? 'admin' : 'public',
+    schoolId: null,
+  });
+
+const ADMIN_X = '01890a5d-ac96-774b-bcce-b302099a8057'; // admin with no fixture id
 
 const DUE = new Date(Date.now() + 7 * 86_400_000);
 
@@ -36,10 +48,23 @@ function setup() {
     classTeacherId: TEACHER_B,
   });
   classRepo.records.push(classA, classB);
+  /** QueryBus double: every referenced entity is live (tests own the rules). */
+  const queryBus = {
+    register: () => {},
+    execute: async () => ({
+      id: 'x',
+      schoolId: SCHOOL_ID.value,
+      isDeleted: false,
+      name: 'x',
+      fullName: 'x',
+      role: 'teacher',
+      academicYear: '2026',
+    }),
+  } as never;
   const service = new AssignmentAppService(
     assignmentRepo,
     new InMemoryEventBus(),
-    undefined,
+    queryBus,
     classRepo,
   );
   return { service, assignmentRepo, classA, classB };
@@ -77,10 +102,7 @@ describe('AssignmentAppService authorization', () => {
   test('a teacher’s list is forced to their own work, ignoring the requested teacherId', async () => {
     const { service, assignmentRepo } = setup();
 
-    await service.listAssignments(
-      { teacherId: TEACHER_B.value },
-      { _id: TEACHER_A.value, role: 'teacher' },
-    );
+    await service.listAssignments({ teacherId: TEACHER_B.value }, asActor(TEACHER_A, 'teacher'));
 
     expect(assignmentRepo.lastFilter?.teacherId).toBe(TEACHER_A.value);
   });
@@ -88,7 +110,7 @@ describe('AssignmentAppService authorization', () => {
   test('an admin list passes the requested teacherId through', async () => {
     const { service, assignmentRepo } = setup();
 
-    await service.listAssignments({ teacherId: TEACHER_B.value }, { _id: 'x', role: 'admin' });
+    await service.listAssignments({ teacherId: TEACHER_B.value }, asActor(ADMIN_X, 'admin'));
 
     expect(assignmentRepo.lastFilter?.teacherId).toBe(TEACHER_B.value);
   });
@@ -96,7 +118,7 @@ describe('AssignmentAppService authorization', () => {
   test('an admin list with no teacherId is not filtered by teacher', async () => {
     const { service, assignmentRepo } = setup();
 
-    await service.listAssignments({}, { _id: 'x', role: 'admin' });
+    await service.listAssignments({}, asActor(ADMIN_X, 'admin'));
 
     expect(assignmentRepo.lastFilter).not.toHaveProperty('teacherId');
   });
@@ -105,17 +127,17 @@ describe('AssignmentAppService authorization', () => {
     const { service, classB } = setup();
 
     await expect(
-      service.createAssignment(createBody(classB), { _id: TEACHER_A.value, role: 'teacher' }),
+      service.createAssignment(createBody(classB), asActor(TEACHER_A, 'teacher')),
     ).rejects.toThrow(/only create assignments for your own classes/i);
   });
 
   test('a teacher’s assignment is attributed to the actor, not the submitted teacherId', async () => {
     const { service, classA } = setup();
 
-    const created = await service.createAssignment(createBody(classA, TEACHER_B), {
-      _id: TEACHER_A.value,
-      role: 'teacher',
-    });
+    const created = await service.createAssignment(
+      createBody(classA, TEACHER_B),
+      asActor(TEACHER_A, 'teacher'),
+    );
 
     expect(created.teacherId).toBe(TEACHER_A.value);
   });
@@ -124,17 +146,17 @@ describe('AssignmentAppService authorization', () => {
     const { service, classA } = setup();
 
     await expect(
-      service.createAssignment(createBody(classA), { _id: 'x', role: 'admin' }),
+      service.createAssignment(createBody(classA), asActor(ADMIN_X, 'admin')),
     ).rejects.toThrow(/teacherId is required/i);
   });
 
   test('an admin can attribute work to any teacher', async () => {
     const { service, classA } = setup();
 
-    const created = await service.createAssignment(createBody(classA, TEACHER_B), {
-      _id: 'x',
-      role: 'admin',
-    });
+    const created = await service.createAssignment(
+      createBody(classA, TEACHER_B),
+      asActor(ADMIN_X, 'admin'),
+    );
 
     expect(created.teacherId).toBe(TEACHER_B.value);
   });
@@ -147,7 +169,7 @@ describe('AssignmentAppService authorization', () => {
     await expect(
       service.updateAssignment(
         { assignmentId: foreign.id.value, title: 'Hijacked title' },
-        { _id: TEACHER_A.value, role: 'teacher' },
+        asActor(TEACHER_A, 'teacher'),
       ),
     ).rejects.toThrow(/only edit your own assignments/i);
   });
@@ -159,7 +181,7 @@ describe('AssignmentAppService authorization', () => {
 
     const updated = await service.updateAssignment(
       { assignmentId: own.id.value, title: 'Revised worksheet' },
-      { _id: TEACHER_A.value, role: 'teacher' },
+      asActor(TEACHER_A, 'teacher'),
     );
 
     expect(updated.title).toBe('Revised worksheet');

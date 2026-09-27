@@ -7,6 +7,7 @@ const timetableRoutes = new Hono();
 const { timetableController } = createTimetableModule();
 
 timetableRoutes.get('/', authMiddleware, timetableController.list);
+timetableRoutes.get('/screen/teacher', authMiddleware, timetableController.teacherScreen);
 timetableRoutes.get('/:id', authMiddleware, timetableController.getEntryById);
 timetableRoutes.post('/', authMiddleware, adminMiddleware, timetableController.create);
 timetableRoutes.patch('/', authMiddleware, adminMiddleware, timetableController.update);

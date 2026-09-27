@@ -4,11 +4,17 @@ import type {
   CreateAssignmentType,
   DeleteAssignmentType,
   GetAssignmentsType,
+  TeacherAssignmentIndexScreenDto,
   UpdateAssignmentType,
 } from '@ecomerece/shared';
 import { http } from '../../lib';
 
 export class AssignmentService {
+  /** Composed screen (new.md §6): the signed-in teacher's assignments, labels resolved. */
+  getTeacherAssignmentIndex(): Promise<TeacherAssignmentIndexScreenDto> {
+    return http.get<TeacherAssignmentIndexScreenDto>('/assignments/screen/teacher');
+  }
+
   getAssignments(params: GetAssignmentsType): Promise<AssignmentListResponseDto> {
     const searchParams = new URLSearchParams();
     if (params.schoolId) searchParams.set('schoolId', params.schoolId);

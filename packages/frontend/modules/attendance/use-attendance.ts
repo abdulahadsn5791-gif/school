@@ -37,6 +37,19 @@ export function useGetClassDayAttendance(classId: string, date: string) {
   });
 }
 
+/**
+ * The composed register screen (new.md §6): roster + existing day records in
+ * one request. Shared by the teacher register and the history view so both
+ * hit the same cache entry.
+ */
+export function useAttendanceRegisterScreen(classId: string, date: string) {
+  return useQuery({
+    queryKey: [...ATTENDANCE_QUERY_KEY, 'register-screen', classId, date],
+    queryFn: () => attendanceService.getRegister(classId, date),
+    enabled: Boolean(classId) && Boolean(date),
+  });
+}
+
 function applyAttendanceMutationResult(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ATTENDANCE_QUERY_KEY });
 }

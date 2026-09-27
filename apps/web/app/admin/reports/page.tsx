@@ -1,8 +1,17 @@
 'use client';
 
-import { useCreateReport, useGetReports, useSoftDeleteReport } from '@ecomerece/frontend';
+import {
+  useCreateReport,
+  useGetAcademicTerms,
+  useGetAdminPaginatedUsers,
+  useGetClasses,
+  useGetReports,
+  useGetSchools,
+  useGetSubjects,
+  useSoftDeleteReport,
+} from '@ecomerece/frontend';
 import type { ReportResponseDto } from '@ecomerece/shared';
-import { Badge, Button, Field, Input, Modal, Textarea } from '@ecomerece/ui';
+import { Badge, Button, Field, Input, Modal, Select, Textarea } from '@ecomerece/ui';
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -188,6 +197,25 @@ function ReportForm({ onDone }: { onDone: () => void }) {
   const [subjects, setSubjects] = useState<SubjectRow[]>([{ ...emptySubject, key: 0 }]);
   const [nextKey, setNextKey] = useState(1);
 
+  // Pickers instead of UUID inputs (new.md §10); cascading off the chosen school.
+  const schools = useGetSchools({ limit: 50 });
+  const schoolOptions = schools.data?.data ?? [];
+  const classes = useGetClasses({ limit: 50 });
+  const classOptions = (classes.data?.data ?? []).filter(
+    (clazz) => !head.schoolId || clazz.schoolId === head.schoolId,
+  );
+  const students = useGetAdminPaginatedUsers({ role: 'student', limit: 50 });
+  const studentOptions = students.data?.data ?? [];
+  const terms = useGetAcademicTerms({ limit: 50 });
+  const termOptions = (terms.data?.data ?? []).filter(
+    (term) => !head.schoolId || term.schoolId === head.schoolId,
+  );
+  const subjectList = useGetSubjects(
+    { schoolId: head.schoolId, limit: 50 },
+    { enabled: Boolean(head.schoolId) },
+  );
+  const subjectOptions = subjectList.data?.data ?? [];
+
   const setSubject = (index: number, patch: Partial<SubjectRow>) =>
     setSubjects((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
 
@@ -228,33 +256,63 @@ function ReportForm({ onDone }: { onDone: () => void }) {
       }}
     >
       <div className="grid grid-cols-2 gap-3">
-        <Field label="School ID">
-          <Input
+        <Field label="School">
+          <Select
             value={head.schoolId}
             onChange={(e) => setHead((h) => ({ ...h, schoolId: e.target.value }))}
             required
-          />
+          >
+            <option value="">{schools.isLoading ? 'Loading schools…' : 'Select a school'}</option>
+            {schoolOptions.map((school) => (
+              <option key={school.id} value={school.id}>
+                {school.name} ({school.code})
+              </option>
+            ))}
+          </Select>
         </Field>
-        <Field label="Student ID">
-          <Input
+        <Field label="Student">
+          <Select
             value={head.studentId}
             onChange={(e) => setHead((h) => ({ ...h, studentId: e.target.value }))}
             required
-          />
+          >
+            <option value="">
+              {students.isLoading ? 'Loading students…' : 'Select a student'}
+            </option>
+            {studentOptions.map((student) => (
+              <option key={student.id} value={student.id}>
+                {student.fullName}
+              </option>
+            ))}
+          </Select>
         </Field>
-        <Field label="Class ID">
-          <Input
+        <Field label="Class">
+          <Select
             value={head.classId}
             onChange={(e) => setHead((h) => ({ ...h, classId: e.target.value }))}
             required
-          />
+          >
+            <option value="">{classes.isLoading ? 'Loading classes…' : 'Select a class'}</option>
+            {classOptions.map((clazz) => (
+              <option key={clazz.id} value={clazz.id}>
+                {clazz.name} · {clazz.academicYear}
+              </option>
+            ))}
+          </Select>
         </Field>
-        <Field label="Term ID">
-          <Input
+        <Field label="Term">
+          <Select
             value={head.termId}
             onChange={(e) => setHead((h) => ({ ...h, termId: e.target.value }))}
             required
-          />
+          >
+            <option value="">{terms.isLoading ? 'Loading terms…' : 'Select a term'}</option>
+            {termOptions.map((term) => (
+              <option key={term.id} value={term.id}>
+                {term.name} · {term.academicYear}
+              </option>
+            ))}
+          </Select>
         </Field>
       </div>
       <Field label="Academic year" hint="2026-2027">
@@ -271,12 +329,21 @@ function ReportForm({ onDone }: { onDone: () => void }) {
           <div key={s.key} className="rounded-xl bg-surface-3 p-3">
             <div className="flex items-end gap-2">
               <div className="flex-1">
-                <Field label={i === 0 ? 'Subject ID' : undefined}>
-                  <Input
+                <Field label={i === 0 ? 'Subject' : undefined}>
+                  <Select
                     value={s.subjectId}
                     onChange={(e) => setSubject(i, { subjectId: e.target.value })}
                     required
-                  />
+                  >
+                    <option value="">
+                      {subjectList.isLoading ? 'Loading subjects…' : 'Select a subject'}
+                    </option>
+                    {subjectOptions.map((subject) => (
+                      <option key={subject.id} value={subject.id}>
+                        {subject.name} ({subject.code})
+                      </option>
+                    ))}
+                  </Select>
                 </Field>
               </div>
               <Button

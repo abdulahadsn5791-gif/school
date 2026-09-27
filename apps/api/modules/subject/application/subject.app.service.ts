@@ -1,7 +1,9 @@
 import {
+  GetSchoolByCodeQuery,
+  GetSchoolSummaryByIdQuery,
   Id,
   type IEventBus,
-  type ISchoolRepository,
+  type IQueryBus,
   type ISubjectRepository,
   Reason,
   SubjectAggregate,
@@ -13,6 +15,7 @@ import type {
   GetSubjectsType,
   UpdateSubjectType,
 } from '@ecomerece/shared';
+import type { Actor } from '../../../core/actor/actor';
 import { ConflictError, NotFoundError } from '../../../errors/app-error';
 import { SubjectMapper } from '../infra/subject.mapper';
 import { SubjectMessages } from '../presentation/subject.messages';
@@ -21,7 +24,7 @@ export class SubjectAppService {
   constructor(
     private readonly subjectRepo: ISubjectRepository,
     private readonly eventBus: IEventBus,
-    private readonly schoolRepo?: ISchoolRepository,
+    private readonly queryBus: IQueryBus,
   ) {}
 
   private async publishEvents(subject: SubjectAggregate): Promise<void> {
@@ -29,12 +32,13 @@ export class SubjectAppService {
     if (events.length > 0) await this.eventBus.publish(events);
   }
 
-  async createSubject(data: CreateSubjectType, _actor: { _id: string }): Promise<SubjectReadModel> {
-    const schoolId = Id.create(data.schoolId);
-    if (this.schoolRepo) {
-      const school = await this.schoolRepo.FindByIdOrThrow(schoolId);
-      if (school.isDeleted) throw new ConflictError('This school has been deleted.');
-    }
+  async createSubject(data: CreateSubjectType, actor: Actor): Promise<SubjectReadModel> {
+    actor.assertAdmin();
+
+    // Engine resolves the human key first (new.md §5): code or id, exactly one.
+    const schoolId = await this.resolveSchool(data);
+    const school = await this.queryBus.execute(new GetSchoolSummaryByIdQuery(schoolId.value));
+    if (school.isDeleted) throw new ConflictError('This school has been deleted.');
 
     // One live subject per school+code (schema partial unique index).
     const existing = await this.subjectRepo.FindBySchoolAndCode(schoolId, data.code);
@@ -54,7 +58,9 @@ export class SubjectAppService {
     return SubjectMapper.aggregateToReadModel(subject);
   }
 
-  async updateSubject(data: UpdateSubjectType, _actor: { _id: string }): Promise<SubjectReadModel> {
+  async updateSubject(data: UpdateSubjectType, actor: Actor): Promise<SubjectReadModel> {
+    actor.assertAdmin();
+
     const subject = await this.subjectRepo.FindByIdOrThrow(Id.create(data.subjectId));
     if (subject.isDeleted) throw new NotFoundError('Subject not found.');
 
@@ -68,6 +74,13 @@ export class SubjectAppService {
   async getSubject(subjectId: string): Promise<SubjectReadModel> {
     const subject = await this.subjectRepo.FindByIdOrThrow(Id.create(subjectId));
     return SubjectMapper.aggregateToReadModel(subject);
+  }
+
+  /** Batch read for screen queries (new.md §6). Hidden subjects are skipped. */
+  async getSubjectsByIds(subjectIds: string[]): Promise<SubjectReadModel[]> {
+    if (subjectIds.length === 0) return [];
+    const subjects = await this.subjectRepo.FindByIds(subjectIds.map((id) => Id.create(id)));
+    return subjects.map((subject) => SubjectMapper.aggregateToReadModel(subject));
   }
 
   async listSubjects(query: GetSubjectsType): Promise<{
@@ -96,8 +109,10 @@ export class SubjectAppService {
     };
   }
 
-  async softDelete(data: DeleteSubjectType, actor: { _id: string }): Promise<string> {
-    const actorId = Id.create(actor._id);
+  async softDelete(data: DeleteSubjectType, actor: Actor): Promise<string> {
+    actor.assertAdmin();
+
+    const actorId = actor.id;
     const subjectId = Id.create(data.subjectId);
     const subject = await this.subjectRepo.FindByIdOrThrow(subjectId);
     subject.delete(actorId, Reason.create(data.reason));
@@ -106,7 +121,28 @@ export class SubjectAppService {
     return SubjectMessages.delete(subjectId, actorId).message;
   }
 
-  async recover(subjectId: string, _actor: { _id: string }): Promise<SubjectReadModel> {
+  /**
+   * Code-or-id school resolution (new.md §5), via the school module's QueryBus
+   * query. Requires exactly one of schoolId / schoolCode.
+   */
+  private async resolveSchool(data: { schoolId?: string; schoolCode?: string }): Promise<Id> {
+    if (data.schoolId && data.schoolCode) {
+      throw new ConflictError('Send either schoolId or schoolCode, not both.');
+    }
+    if (data.schoolId) return Id.create(data.schoolId);
+    if (data.schoolCode) {
+      const school = await this.queryBus.execute(new GetSchoolByCodeQuery(data.schoolCode));
+      if (!school) {
+        throw new NotFoundError(`No school exists with code "${data.schoolCode}".`);
+      }
+      return Id.create(school.id);
+    }
+    throw new ConflictError('A schoolId or schoolCode is required.');
+  }
+
+  async recover(subjectId: string, actor: Actor): Promise<SubjectReadModel> {
+    actor.assertAdmin();
+
     const subject = await this.subjectRepo.FindByIdOrThrow(Id.create(subjectId));
     subject.recover();
     await this.subjectRepo.Save(subject);

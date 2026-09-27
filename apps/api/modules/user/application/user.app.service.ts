@@ -29,11 +29,11 @@ import type {
   UpdateUserType,
   UserResponseReadModel,
 } from '@ecomerece/shared';
+import type { Actor } from '../../../core/actor/actor';
 import { BadRequestError, ConflictError } from '../../../errors/app-error';
 import { hashPassword, verifyPassword } from '../../../lib/password';
 import { createImageStorageModule } from '../../image-storage/image-storage.module';
 import { UserMapper } from '../infra/user.mapper';
-import type { UserPersistence } from '../infra/user.models';
 import { UserMessages, type UserMessagesType } from '../presentation/user.messages';
 import { createUserToken } from './user.token';
 
@@ -148,13 +148,25 @@ export class UserAppService {
     };
   }
 
+  /** Admin route (see user.routes.ts) — admin tier can see deleted/banned/blocked. */
   async getUserById(userId: string): Promise<UserResponseReadModel> {
-    const user = await this.userRepo.FindByIdOrThrow(Id.create(userId));
+    const user = await this.userRepo.FindByIdOrThrow(Id.create(userId), 'admin');
     return UserMapper.aggregateToResponseReadModel(user);
   }
 
-  async assignRole(data: AssignUserRoleType, actor: UserPersistence): Promise<UserMessagesType> {
-    const actorId = Id.create(actor._id);
+  /** Batched public-tier lookup for cross-module consumers (QueryBus handler). */
+  async getUsersByIds(ids: string[]): Promise<UserResponseReadModel[]> {
+    if (ids.length === 0) return [];
+    const users = await this.userRepo.FindByIds(
+      ids.map((value) => Id.create(value)),
+      'public',
+    );
+    return users.map((user) => UserMapper.aggregateToResponseReadModel(user));
+  }
+
+  async assignRole(data: AssignUserRoleType, actor: Actor): Promise<UserMessagesType> {
+    actor.assertAdmin();
+    const actorId = actor.id;
     const userId = Id.create(data.userId);
     const role = UserRoleVO.create(data.role);
     const reason = Reason.create(data.reason);
@@ -176,13 +188,14 @@ export class UserAppService {
     return UserMessages.assignRole(userId, role, actorId);
   }
 
-  async getMe(actor: UserPersistence): Promise<UserResponseReadModel> {
-    const user = await this.userRepo.FindByIdOrThrow(Id.create(actor._id));
+  async getMe(actor: Actor): Promise<UserResponseReadModel> {
+    const user = await this.userRepo.FindByIdOrThrow(actor.id);
     return UserMapper.aggregateToResponseReadModel(user);
   }
 
-  async softDeleteUser(data: DeleteUserType, actor: UserPersistence): Promise<UserMessagesType> {
-    const actorId = Id.create(actor._id);
+  async softDeleteUser(data: DeleteUserType, actor: Actor): Promise<UserMessagesType> {
+    actor.assertAdmin();
+    const actorId = actor.id;
     const userId = Id.create(data.userId);
     const user = await this.userRepo.FindByIdOrThrow(userId);
     user.deleteUser(actorId, Reason.create(data.reason));
@@ -191,8 +204,9 @@ export class UserAppService {
     return UserMessages.delete(userId, actorId);
   }
 
-  async recoverUser(userId: string, actor: UserPersistence): Promise<UserMessagesType> {
-    const actorId = Id.create(actor._id);
+  async recoverUser(userId: string, actor: Actor): Promise<UserMessagesType> {
+    actor.assertAdmin();
+    const actorId = actor.id;
     const id = Id.create(userId);
     const user = await this.userRepo.FindByIdOrThrow(id);
     user.recoverUser(actorId);
@@ -201,9 +215,10 @@ export class UserAppService {
     return UserMessages.recover(id, actorId);
   }
 
-  async blockUser(data: BlockUserType, actor: UserPersistence): Promise<UserMessagesType> {
+  async blockUser(data: BlockUserType, actor: Actor): Promise<UserMessagesType> {
+    actor.assertAdmin();
     const userId = Id.create(data.userId);
-    const actorId = Id.create(actor._id);
+    const actorId = actor.id;
     const user = await this.userRepo.FindByIdOrThrow(userId);
     user.blockUser(actorId, Reason.create(data.reason));
     await this.userRepo.Save(user);
@@ -211,9 +226,10 @@ export class UserAppService {
     return UserMessages.block(userId, actorId);
   }
 
-  async blockLift(userId: string, actor: UserPersistence): Promise<UserMessagesType> {
+  async blockLift(userId: string, actor: Actor): Promise<UserMessagesType> {
+    actor.assertAdmin();
     const id = Id.create(userId);
-    const actorId = Id.create(actor._id);
+    const actorId = actor.id;
     const user = await this.userRepo.FindByIdOrThrow(id);
     user.unBlockUser(actorId);
     await this.userRepo.Save(user);
@@ -221,9 +237,10 @@ export class UserAppService {
     return UserMessages.blockLift(id, actorId);
   }
 
-  async banUser(data: BanUserType, actor: UserPersistence): Promise<UserMessagesType> {
+  async banUser(data: BanUserType, actor: Actor): Promise<UserMessagesType> {
+    actor.assertAdmin();
     const userId = Id.create(data.userId);
-    const actorId = Id.create(actor._id);
+    const actorId = actor.id;
     const user = await this.userRepo.FindByIdOrThrow(userId);
     user.banUser(actorId, data.days, Reason.create(data.reason));
     await this.userRepo.Save(user);
@@ -231,9 +248,10 @@ export class UserAppService {
     return UserMessages.ban(userId, actorId, data.days);
   }
 
-  async banLift(userId: string, actor: UserPersistence): Promise<UserMessagesType> {
+  async banLift(userId: string, actor: Actor): Promise<UserMessagesType> {
+    actor.assertAdmin();
     const id = Id.create(userId);
-    const actorId = Id.create(actor._id);
+    const actorId = actor.id;
     const user = await this.userRepo.FindByIdOrThrow(id);
     user.unBanUser(actorId);
     await this.userRepo.Save(user);
@@ -241,9 +259,10 @@ export class UserAppService {
     return UserMessages.banLift(id, actorId);
   }
 
-  async extendBan(data: ExtendBanType, actor: UserPersistence): Promise<UserMessagesType> {
+  async extendBan(data: ExtendBanType, actor: Actor): Promise<UserMessagesType> {
+    actor.assertAdmin();
     const userId = Id.create(data.userId);
-    const actorId = Id.create(actor._id);
+    const actorId = actor.id;
     const user = await this.userRepo.FindByIdOrThrow(userId);
     user.extendBan(actorId, data.days);
     await this.userRepo.Save(user);
@@ -251,9 +270,10 @@ export class UserAppService {
     return UserMessages.extendBan(userId, actorId, data.days);
   }
 
-  async shortenBan(data: ExtendBanType, actor: UserPersistence): Promise<UserMessagesType> {
+  async shortenBan(data: ExtendBanType, actor: Actor): Promise<UserMessagesType> {
+    actor.assertAdmin();
     const userId = Id.create(data.userId);
-    const actorId = Id.create(actor._id);
+    const actorId = actor.id;
     const user = await this.userRepo.FindByIdOrThrow(userId);
     user.shortenBan(actorId, data.days);
     await this.userRepo.Save(user);
@@ -262,7 +282,8 @@ export class UserAppService {
   }
 
   async findPaginatedUsers(query: GetPaginatedUsersType) {
-    const filter: Record<string, unknown> = { 'deleted.deleted': false };
+    // Public tier: visibility filter comes from the repo's domain policy now.
+    const filter: Record<string, unknown> = {};
     if (query.search) {
       const escaped = query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       filter['name.fullName'] = { $regex: escaped, $options: 'i' };
@@ -272,6 +293,7 @@ export class UserAppService {
       cursor: query.cursor ? Id.create(query.cursor) : undefined,
       limit: query.limit,
       direction: query.direction,
+      tier: 'public',
     });
     return {
       data: result.data.map((user) => UserMapper.aggregateToResponseReadModel(user)),
@@ -281,6 +303,7 @@ export class UserAppService {
 
   async findAdminPaginatedUsers(query: GetAdminPaginatedUsersType) {
     const filter: Record<string, unknown> = {};
+    // Admin tier — no visibility filter; explicit state filters come from the query.
     if (query.search) {
       const escaped = query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       filter['name.fullName'] = { $regex: escaped, $options: 'i' };
@@ -294,6 +317,7 @@ export class UserAppService {
       cursor: query.cursor ? Id.create(query.cursor) : undefined,
       limit: query.limit,
       direction: query.direction,
+      tier: 'admin',
     });
     return {
       data: result.data.map((user) => UserMapper.aggregateToResponseReadModel(user)),

@@ -3,11 +3,12 @@
 import {
   useCreateAcademicTerm,
   useGetAcademicTerms,
+  useGetSchools,
   useSoftDeleteAcademicTerm,
   useUpdateAcademicTerm,
 } from '@ecomerece/frontend';
 import type { AcademicTermResponseDto, GetAcademicTermsType } from '@ecomerece/shared';
-import { Badge, Button, Field, Input, Modal } from '@ecomerece/ui';
+import { Badge, Button, Field, Input, Modal, Select } from '@ecomerece/ui';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useState } from 'react';
 
@@ -193,6 +194,10 @@ function TermForm({
   const pending = createTerm.isPending || updateTerm.isPending;
   const error = createTerm.error ?? updateTerm.error;
 
+  // Schools come from the engine's list (new.md §10) — no pasted UUIDs.
+  const schools = useGetSchools({ limit: 50 });
+  const schoolOptions = schools.data?.data ?? [];
+
   const submit = () => {
     if (mode === 'create') {
       createTerm.mutate(
@@ -228,12 +233,19 @@ function TermForm({
     >
       {mode === 'create' && (
         <>
-          <Field label="School ID" hint="UUID of the school this term belongs to">
-            <Input
+          <Field label="School">
+            <Select
               value={form.schoolId}
               onChange={(e) => setForm((f) => ({ ...f, schoolId: e.target.value }))}
               required
-            />
+            >
+              <option value="">{schools.isLoading ? 'Loading schools…' : 'Select a school'}</option>
+              {schoolOptions.map((school) => (
+                <option key={school.id} value={school.id}>
+                  {school.name} ({school.code})
+                </option>
+              ))}
+            </Select>
           </Field>
           <Field label="Academic year" hint="Format 2026-2027">
             <Input

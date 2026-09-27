@@ -6,6 +6,8 @@ export interface IEnrollmentRepository {
   FindByIdOrThrow(id: Id): Promise<EnrollmentAggregate>;
   FindByStudentAndYear(studentId: Id, academicYear: string): Promise<EnrollmentAggregate | null>;
   FindByClass(classId: Id): Promise<EnrollmentAggregate[]>;
+  /** Live enrollments across several classes (batched name-index support). */
+  FindByClasses(classIds: Id[]): Promise<EnrollmentAggregate[]>;
   FindActiveByStudent(studentId: Id): Promise<EnrollmentAggregate[]>;
   FindByStudent(studentId: Id): Promise<EnrollmentAggregate[]>;
   Save(enrollment: EnrollmentAggregate): Promise<void>;

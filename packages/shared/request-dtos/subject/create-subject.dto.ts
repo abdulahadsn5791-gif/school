@@ -3,7 +3,15 @@ import { z } from 'zod';
 import { idSchema } from '../../dtos';
 
 export const createSubjectDto = z.object({
-  schoolId: idSchema,
+  schoolId: idSchema.optional(),
+  /** Human key (new.md §5): the engine derives schoolId from this when sent. */
+  schoolCode: z
+    .string()
+    .trim()
+    .min(2)
+    .max(32)
+    .regex(/^[A-Za-z0-9-]+$/, 'School code may only contain letters, numbers and dashes.')
+    .optional(),
   name: z
     .string()
     .trim()

@@ -44,6 +44,10 @@ export class MemoryClassRepository implements IClassRepository {
     return found;
   }
 
+  async FindByIds(ids: Id[]): Promise<ClassAggregate[]> {
+    return this.records.filter((c) => ids.some((id) => c.id.equals(id)));
+  }
+
   async FindBySchool(schoolId: Id): Promise<ClassAggregate[]> {
     return this.records.filter((c) => c.schoolId.equals(schoolId));
   }
@@ -158,6 +162,11 @@ export class MemoryAssignmentRepository implements IAssignmentRepository {
     return this.records.filter(
       (a) => a.schoolId.equals(schoolId) && a.teacherId.equals(teacherId) && !a.isDeleted,
     );
+  }
+
+  async FindByTeacherAllSchools(teacherId: Id, limit?: number): Promise<AssignmentAggregate[]> {
+    const found = this.records.filter((a) => a.teacherId.equals(teacherId) && !a.isDeleted);
+    return limit !== undefined ? found.slice(0, limit) : found;
   }
 
   async Save(assignment: AssignmentAggregate): Promise<void> {

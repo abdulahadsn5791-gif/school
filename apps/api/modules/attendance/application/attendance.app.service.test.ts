@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { AttendanceAggregate, ClassAggregate, Id } from '@ecomerece/domain';
+import { Actor } from '../../../core/actor/actor';
 import { InMemoryEventBus } from '../../../core/infrastructure/buses/in-memory-event-bus';
 import {
   MemoryAttendanceRepository,
@@ -11,6 +12,10 @@ const SCHOOL_ID = Id.create();
 const TEACHER_A = Id.create();
 const TEACHER_B = Id.create();
 const STUDENT = Id.create();
+
+/** Test actor builder — mirrors what auth/admin middleware produces. */
+const asActor = (id: Id, role: 'teacher' | 'admin'): Actor =>
+  new Actor({ id, role, tier: role === 'admin' ? 'admin' : 'public', schoolId: null });
 
 const TODAY = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
 
@@ -32,10 +37,21 @@ function setup() {
   const classA = classOwnedBy(TEACHER_A, 'Class A');
   const classB = classOwnedBy(TEACHER_B, 'Class B');
   classRepo.records.push(classA, classB);
+  /** QueryBus double: every referenced entity is live (tests own the rules). */
+  const queryBus = {
+    register: () => {},
+    execute: async () => ({
+      id: 'x',
+      schoolId: SCHOOL_ID.value,
+      isDeleted: false,
+      fullName: 'x',
+      role: 'student',
+    }),
+  } as never;
   const service = new AttendanceAppService(
     attendanceRepo,
     new InMemoryEventBus(),
-    undefined,
+    queryBus,
     classRepo,
   );
   return { service, attendanceRepo, classA, classB };
@@ -52,15 +68,15 @@ describe('AttendanceAppService authorization', () => {
   test('a teacher cannot mark attendance for another teacher’s class', async () => {
     const { service, classB } = setup();
 
-    await expect(
-      service.mark(entry(classB.id), { _id: TEACHER_A.value, role: 'teacher' }),
-    ).rejects.toThrow(/only mark attendance for your own classes/i);
+    await expect(service.mark(entry(classB.id), asActor(TEACHER_A, 'teacher'))).rejects.toThrow(
+      /only mark attendance for your own classes/i,
+    );
   });
 
   test('a teacher can mark attendance for their own class', async () => {
     const { service, classA, attendanceRepo } = setup();
 
-    const result = await service.mark(entry(classA.id), { _id: TEACHER_A.value, role: 'teacher' });
+    const result = await service.mark(entry(classA.id), asActor(TEACHER_A, 'teacher'));
 
     expect(result).toHaveLength(1);
     expect(attendanceRepo.records).toHaveLength(1);
@@ -70,17 +86,18 @@ describe('AttendanceAppService authorization', () => {
     const { service, classB } = setup();
 
     await expect(
-      service.getByClassAndDate(classB.id.value, TODAY, { _id: TEACHER_A.value, role: 'teacher' }),
+      service.getByClassAndDate(classB.id.value, TODAY, asActor(TEACHER_A, 'teacher')),
     ).rejects.toThrow(/only view attendance for your own classes/i);
   });
 
   test('a teacher can read their own class register', async () => {
     const { service, classA } = setup();
 
-    const records = await service.getByClassAndDate(classA.id.value, TODAY, {
-      _id: TEACHER_A.value,
-      role: 'teacher',
-    });
+    const records = await service.getByClassAndDate(
+      classA.id.value,
+      TODAY,
+      asActor(TEACHER_A, 'teacher'),
+    );
 
     expect(records).toEqual([]);
   });
@@ -91,7 +108,7 @@ describe('AttendanceAppService authorization', () => {
     await expect(
       service.list(
         { classId: classB.id.value, fromDate: new Date(TODAY) },
-        { _id: TEACHER_A.value, role: 'teacher' },
+        asActor(TEACHER_A, 'teacher'),
       ),
     ).rejects.toThrow(/only view attendance for your own classes/i);
   });
@@ -99,14 +116,14 @@ describe('AttendanceAppService authorization', () => {
   test('an admin bypasses the ownership check', async () => {
     const { service, classB } = setup();
 
-    const result = await service.mark(entry(classB.id), { _id: TEACHER_A.value, role: 'admin' });
+    const result = await service.mark(entry(classB.id), asActor(TEACHER_A, 'admin'));
 
     expect(result).toHaveLength(1);
   });
 
   test('re-marking the same student and day updates rather than duplicating', async () => {
     const { service, classA, attendanceRepo } = setup();
-    const teacher = { _id: TEACHER_A.value, role: 'teacher' };
+    const teacher = asActor(TEACHER_A, 'teacher');
 
     await service.mark(entry(classA.id), teacher);
     await service.mark(

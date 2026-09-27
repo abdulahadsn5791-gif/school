@@ -3,11 +3,12 @@
 import {
   useCreateGuardian,
   useGetGuardians,
+  useGetSchools,
   useSoftDeleteGuardian,
   useUpdateGuardian,
 } from '@ecomerece/frontend';
 import type { GetGuardiansType, GuardianResponseDto } from '@ecomerece/shared';
-import { Badge, Button, Field, Input, Modal } from '@ecomerece/ui';
+import { Badge, Button, Field, Input, Modal, Select } from '@ecomerece/ui';
 import { ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react';
 import { useState } from 'react';
 
@@ -202,6 +203,9 @@ function GuardianForm({
 }) {
   const createGuardian = useCreateGuardian();
   const updateGuardian = useUpdateGuardian();
+  // Schools come from the engine's list (new.md §10) — no pasted UUIDs.
+  const schools = useGetSchools({ limit: 50 });
+  const schoolOptions = schools.data?.data ?? [];
   const [form, setForm] = useState({
     schoolId: initial?.schoolId ?? '',
     firstName: initial?.name.firstName ?? '',
@@ -254,12 +258,19 @@ function GuardianForm({
       }}
     >
       {mode === 'create' && (
-        <Field label="School ID" hint="UUID of the school">
-          <Input
+        <Field label="School">
+          <Select
             value={form.schoolId}
             onChange={(e) => setForm((f) => ({ ...f, schoolId: e.target.value }))}
             required
-          />
+          >
+            <option value="">{schools.isLoading ? 'Loading schools…' : 'Select a school'}</option>
+            {schoolOptions.map((school) => (
+              <option key={school.id} value={school.id}>
+                {school.name} ({school.code})
+              </option>
+            ))}
+          </Select>
         </Field>
       )}
       <div className="grid grid-cols-3 gap-3">

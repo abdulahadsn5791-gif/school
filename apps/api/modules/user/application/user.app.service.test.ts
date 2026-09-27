@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  type ActorTier,
   type EmailVO,
   Id,
   type IEnrollmentRepository,
@@ -9,29 +10,36 @@ import {
   type UserAggregate,
 } from '@ecomerece/domain';
 import type { CreateUserType, UpdateUserType } from '@ecomerece/shared';
+import { Actor } from '../../../core/actor/actor';
 import { InMemoryEventBus } from '../../../core/infrastructure/buses/in-memory-event-bus';
-import type { UserPersistence } from '../infra/user.models';
 import { UserAppService } from './user.app.service';
 
 class MemoryUserRepository implements IUserRepository {
   readonly records: UserAggregate[] = [];
 
-  async FindById(id: Id): Promise<UserAggregate | null> {
-    return this.records.find((user) => user.id.equals(id)) ?? null;
+  async FindById(id: Id, tier: ActorTier = 'public'): Promise<UserAggregate | null> {
+    const user = this.records.find((user) => user.id.equals(id)) ?? null;
+    if (!user || tier === 'admin') return user;
+    return isPubliclyVisible(user) ? user : null;
   }
 
-  async FindByEmail(email: EmailVO): Promise<UserAggregate | null> {
-    return this.records.find((user) => user.email.equals(email)) ?? null;
+  async FindByEmail(email: EmailVO, tier: ActorTier = 'public'): Promise<UserAggregate | null> {
+    const user = this.records.find((user) => user.email.equals(email)) ?? null;
+    if (!user || tier === 'admin') return user;
+    return isPubliclyVisible(user) ? user : null;
   }
 
-  async FindByIdOrThrow(id: Id): Promise<UserAggregate> {
-    const user = await this.FindById(id);
+  async FindByIdOrThrow(id: Id, tier: ActorTier = 'public'): Promise<UserAggregate> {
+    const user = await this.FindById(id, tier);
     if (!user) throw new Error('User not found');
     return user;
   }
 
-  async FindByIds(id: Id[]): Promise<UserAggregate[]> {
-    return this.records.filter((user) => id.some((value) => user.id.equals(value)));
+  async FindByIds(ids: Id[], tier: ActorTier = 'public'): Promise<UserAggregate[]> {
+    return this.records.filter(
+      (user) =>
+        ids.some((value) => user.id.equals(value)) && (tier === 'admin' || isPubliclyVisible(user)),
+    );
   }
 
   async FindByEmailOrThrow(email: EmailVO): Promise<UserAggregate> {
@@ -65,12 +73,16 @@ class MemoryUserRepository implements IUserRepository {
     cursor?: Id;
     limit?: number;
     direction?: 'next' | 'prev';
+    tier?: ActorTier;
   }) {
     return {
       data: [...this.records],
       meta: { nextCursor: null, prevCursor: null, hasMore: false },
     };
   }
+} /** Mirrors USER_PUBLIC_VISIBILITY semantics for in-memory records. */
+function isPubliclyVisible(user: UserAggregate): boolean {
+  return user.isUsable;
 }
 
 const createUserData: CreateUserType = {
@@ -161,7 +173,12 @@ describe('UserAppService', () => {
     } as unknown as IEnrollmentRepository;
     const service = new UserAppService(repository, new InMemoryEventBus(), enrollmentRepository);
     const created = await service.createUser(createUserData);
-    const actor = { _id: Id.create().value } as UserPersistence;
+    const actor = new Actor({
+      id: Id.create(),
+      role: 'admin',
+      tier: 'admin',
+      schoolId: null,
+    });
 
     await expect(
       service.assignRole(

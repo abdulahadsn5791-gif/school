@@ -1,13 +1,16 @@
 import {
+  type ClassRosterEntryReadModel,
   EnrollmentAggregate,
   type EnrollmentReadModel,
+  GetSchoolSummaryByIdQuery,
+  GetUserSummariesByIdsQuery,
   type IClassRepository,
   Id,
   type IEnrollmentRepository,
   type IEventBus,
-  type ISchoolRepository,
-  type IUserRepository,
+  type IQueryBus,
   Reason,
+  type StudentNameIndexEntryReadModel,
 } from '@ecomerece/domain';
 import type {
   ClassRosterStudentDto,
@@ -17,6 +20,7 @@ import type {
   GetEnrollmentsType,
   UpdateEnrollmentType,
 } from '@ecomerece/shared';
+import type { Actor } from '../../../core/actor/actor';
 import { ConflictError, ForbiddenError, NotFoundError } from '../../../errors/app-error';
 import { EnrollmentMapper } from '../infra/enrollment.mapper';
 import { EnrollmentMessages } from '../presentation/enrollment.messages';
@@ -26,8 +30,7 @@ export class EnrollmentAppService {
     private readonly enrollmentRepo: IEnrollmentRepository,
     private readonly classRepo: IClassRepository,
     private readonly eventBus: IEventBus,
-    private readonly schoolRepo?: ISchoolRepository,
-    private readonly userRepo?: IUserRepository,
+    private readonly queryBus: IQueryBus,
   ) {}
 
   private async publishEvents(enrollment: EnrollmentAggregate): Promise<void> {
@@ -35,19 +38,16 @@ export class EnrollmentAppService {
     if (events.length > 0) await this.eventBus.publish(events);
   }
 
-  async createEnrollment(
-    data: CreateEnrollmentType,
-    _actor: { _id: string },
-  ): Promise<EnrollmentReadModel> {
+  async createEnrollment(data: CreateEnrollmentType, actor: Actor): Promise<EnrollmentReadModel> {
+    actor.assertAdmin();
+
     const studentId = Id.create(data.studentId);
     const classId = Id.create(data.classId);
 
     const clazz = await this.classRepo.FindByIdOrThrow(classId);
     if (clazz.isDeleted) throw new ConflictError('This class has been deleted.');
-    if (this.schoolRepo) {
-      const school = await this.schoolRepo.FindByIdOrThrow(clazz.schoolId);
-      if (school.isDeleted) throw new ConflictError('This school has been deleted.');
-    }
+    const school = await this.queryBus.execute(new GetSchoolSummaryByIdQuery(clazz.schoolId.value));
+    if (school.isDeleted) throw new ConflictError('This school has been deleted.');
 
     // One live enrollment per student per academic year (schema unique index).
     const existing = await this.enrollmentRepo.FindByStudentAndYear(studentId, clazz.academicYear);
@@ -78,10 +78,9 @@ export class EnrollmentAppService {
     return EnrollmentMapper.aggregateToReadModel(enrollment);
   }
 
-  async updateEnrollment(
-    data: UpdateEnrollmentType,
-    _actor: { _id: string },
-  ): Promise<EnrollmentReadModel> {
+  async updateEnrollment(data: UpdateEnrollmentType, actor: Actor): Promise<EnrollmentReadModel> {
+    actor.assertAdmin();
+
     const enrollment = await this.enrollmentRepo.FindByIdOrThrow(Id.create(data.enrollmentId));
     if (enrollment.isDeleted) throw new NotFoundError('Enrollment not found.');
 
@@ -110,29 +109,69 @@ export class EnrollmentAppService {
    * route that exposes student names to a teacher, so the ownership check is
    * deliberately strict.
    */
-  async getClassRoster(
-    data: GetClassRosterType,
-    actor: { _id: string; role: string },
-  ): Promise<ClassRosterStudentDto[]> {
-    const classId = Id.create(data.classId);
-
-    const clazz = await this.classRepo.FindByIdOrThrow(classId);
+  async getClassRoster(data: GetClassRosterType, actor: Actor): Promise<ClassRosterStudentDto[]> {
+    const clazz = await this.classRepo.FindByIdOrThrow(Id.create(data.classId));
     if (clazz.isDeleted) throw new ConflictError('This class has been deleted.');
-    if (actor.role !== 'admin' && clazz.classTeacherId?.equals(Id.create(actor._id)) !== true) {
+    if (actor.role !== 'admin' && clazz.classTeacherId?.equals(actor.id) !== true) {
       throw new ForbiddenError('You can only view the roster for your own classes.');
     }
+    return this.getRosterForClass(data.classId);
+  }
 
-    const enrollments = (await this.enrollmentRepo.FindByClass(classId)).filter(
+  /**
+   * Student names for several classes in ONE batched round trip (new.md §6).
+   * A teacher is restricted to classes they own — the same law as the roster
+   * route — so ownership is enforced on the WHOLE request before any read.
+   */
+  async getStudentNameIndex(
+    classIds: string[],
+    actor: Actor,
+  ): Promise<StudentNameIndexEntryReadModel[]> {
+    if (classIds.length === 0) return [];
+
+    let allowedIds = classIds;
+    if (actor.role !== 'admin') {
+      // Restrict the whole request to the caller's own classes up front.
+      const owned = await this.classRepo.FindByTeacher(actor.id);
+      const ownedIds = new Set(owned.map((clazz) => clazz.id.value));
+      allowedIds = classIds.filter((id) => ownedIds.has(id));
+      if (allowedIds.length === 0) return [];
+    }
+
+    const enrollments = await this.enrollmentRepo.FindByClasses(
+      allowedIds.map((id) => Id.create(id)),
+    );
+    if (enrollments.length === 0) return [];
+
+    const students = await this.queryBus.execute(
+      new GetUserSummariesByIdsQuery(enrollments.map((enrollment) => enrollment.studentId.value)),
+    );
+    const nameByStudentId = new Map(students.map((student) => [student.id, student.fullName]));
+
+    return enrollments.map((enrollment) => ({
+      classId: enrollment.classId.value,
+      studentId: enrollment.studentId.value,
+      fullName: nameByStudentId.get(enrollment.studentId.value) ?? 'Unknown student',
+      rollNumber: enrollment.rollNumber,
+    }));
+  }
+
+  /**
+   * The read side behind the roster route AND the cross-module roster query
+   * (new.md §6): no actor check here — HTTP callers were checked above, and
+   * QueryBus callers (sibling modules like attendance) authorize the class
+   * before asking. Batched public-tier name resolution, no N+1.
+   */
+  async getRosterForClass(classId: string): Promise<ClassRosterEntryReadModel[]> {
+    const enrollments = (await this.enrollmentRepo.FindByClass(Id.create(classId))).filter(
       (enrollment) => !enrollment.isDeleted,
     );
     if (enrollments.length === 0) return [];
 
-    const students = this.userRepo
-      ? await this.userRepo.FindByIds(enrollments.map((enrollment) => enrollment.studentId))
-      : [];
-    const nameByStudentId = new Map(
-      students.map((student) => [student.id.value, student.name.fullName]),
+    const students = await this.queryBus.execute(
+      new GetUserSummariesByIdsQuery(enrollments.map((enrollment) => enrollment.studentId.value)),
     );
+    const nameByStudentId = new Map(students.map((student) => [student.id, student.fullName]));
 
     return enrollments
       .map((enrollment) => ({
@@ -169,8 +208,10 @@ export class EnrollmentAppService {
     };
   }
 
-  async softDelete(data: DeleteEnrollmentType, actor: { _id: string }): Promise<string> {
-    const actorId = Id.create(actor._id);
+  async softDelete(data: DeleteEnrollmentType, actor: Actor): Promise<string> {
+    actor.assertAdmin();
+
+    const actorId = actor.id;
     const enrollmentId = Id.create(data.enrollmentId);
     const enrollment = await this.enrollmentRepo.FindByIdOrThrow(enrollmentId);
     enrollment.delete(actorId, Reason.create(data.reason));
@@ -179,7 +220,9 @@ export class EnrollmentAppService {
     return EnrollmentMessages.delete(enrollmentId, actorId).message;
   }
 
-  async recover(enrollmentId: string, _actor: { _id: string }): Promise<EnrollmentReadModel> {
+  async recover(enrollmentId: string, actor: Actor): Promise<EnrollmentReadModel> {
+    actor.assertAdmin();
+
     const enrollment = await this.enrollmentRepo.FindByIdOrThrow(Id.create(enrollmentId));
     enrollment.recover();
     await this.enrollmentRepo.Save(enrollment);

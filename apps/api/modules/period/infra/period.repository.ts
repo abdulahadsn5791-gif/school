@@ -25,6 +25,12 @@ export class PeriodRepository
     return PeriodMapper.persistenceToAggregate(doc);
   }
 
+  async FindByIds(ids: Id[]): Promise<PeriodAggregate[]> {
+    if (ids.length === 0) return [];
+    const docs = await super.find({ _id: { $in: ids.map((id) => id.value) } });
+    return docs.map((doc) => PeriodMapper.persistenceToAggregate(doc));
+  }
+
   async FindBySchool(schoolId: Id): Promise<PeriodAggregate[]> {
     const docs = await super.find({ schoolId: schoolId.value });
     return docs.map((doc) => PeriodMapper.persistenceToAggregate(doc));

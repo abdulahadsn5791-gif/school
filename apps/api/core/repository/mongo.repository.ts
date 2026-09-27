@@ -185,6 +185,115 @@ export class MongoRepository<T> extends BaseRepository<T> {
   }
 
   /**
+   * Keyset pagination sorted by a metric field (desc, tie-broken by `_id` asc)
+   * or by `_id` alone for 'newest'/'oldest'. Tier-agnostic (new.md §7): the
+   * CALLER composes the visibility filter (public/admin tier) into `filter`;
+   * this helper only owns the cursor math. The shared `paginateByCursor`
+   * (`_id` desc) stays untouched for the default case.
+   */
+  async paginateSortedBy(params: {
+    filter?: FilterQuery<T>;
+    sort?: { field: string; dir: 1 | -1 } | 'newest' | 'oldest';
+    cursor?: string;
+    limit?: number;
+    direction?: 'next' | 'prev';
+  }): Promise<{
+    data: T[];
+    meta: { nextCursor: string | null; prevCursor: string | null; hasMore: boolean };
+  }> {
+    const limit = Math.max(1, Math.min(params.limit ?? 20, 100));
+    const sort = params.sort ?? 'newest';
+    const metric = typeof sort === 'object' ? sort : null;
+    const sortField = metric ? metric.field : '_id';
+    const dir: 1 | -1 = metric ? metric.dir : sort === 'oldest' ? 1 : -1;
+
+    type Cursor = { v: unknown; id: string };
+    const parseCursor = (raw?: string): Cursor | null => {
+      if (!raw) return null;
+      try {
+        return JSON.parse(Buffer.from(raw, 'base64url').toString('utf-8')) as Cursor;
+      } catch {
+        return null;
+      }
+    };
+    const encodeCursor = (v: unknown, id: string): string =>
+      Buffer.from(JSON.stringify({ v, id })).toString('base64url');
+
+    const baseFilter: FilterQuery<T> = params.filter ?? {};
+    const filterFor = (cur: Cursor | null, goingForward: boolean): FilterQuery<T> => {
+      if (!cur) return baseFilter;
+      const extra = metric
+        ? goingForward
+          ? {
+              $or: [{ [sortField]: { $lt: cur.v } }, { [sortField]: cur.v, _id: { $gt: cur.id } }],
+            }
+          : {
+              $or: [{ [sortField]: { $gt: cur.v } }, { [sortField]: cur.v, _id: { $lt: cur.id } }],
+            }
+        : goingForward
+          ? dir === -1
+            ? { _id: { $lt: cur.v } }
+            : { _id: { $gt: cur.v } }
+          : dir === -1
+            ? { _id: { $gt: cur.v } }
+            : { _id: { $lt: cur.v } };
+      return { ...baseFilter, ...(extra as object) } as FilterQuery<T>;
+    };
+
+    const forwardSort = metric
+      ? ({ [sortField]: dir === -1 ? -1 : 1, _id: dir === -1 ? 1 : -1 } as Record<string, 1 | -1>)
+      : { _id: dir };
+    const reverseSort = metric
+      ? ({ [sortField]: dir === -1 ? 1 : -1, _id: dir === -1 ? -1 : 1 } as Record<string, 1 | -1>)
+      : { _id: (dir === -1 ? 1 : -1) as 1 | -1 };
+
+    const cursor = parseCursor(params.cursor);
+    const isPrev = params.direction === 'prev';
+
+    const sortValueOf = (doc: T & { _id: string }): unknown =>
+      metric ? ((doc as Record<string, unknown>)[sortField] ?? 0) : doc._id;
+
+    if (!isPrev) {
+      const docs = (await this.model
+        .find(filterFor(cursor, true))
+        .sort(forwardSort)
+        .limit(limit + 1)
+        .session(this.session ?? null)
+        .lean()) as (T & { _id: string })[];
+      const hasMore = docs.length > limit;
+      const page = docs.slice(0, limit);
+      const last = page[page.length - 1];
+      const first = page[0];
+      return {
+        data: page,
+        meta: {
+          nextCursor: last && hasMore ? encodeCursor(sortValueOf(last), String(last._id)) : null,
+          prevCursor: first ? encodeCursor(sortValueOf(first), String(first._id)) : null,
+          hasMore,
+        },
+      };
+    }
+
+    const docs = (await this.model
+      .find(filterFor(cursor, false))
+      .sort(reverseSort)
+      .limit(limit + 1)
+      .session(this.session ?? null)
+      .lean()) as (T & { _id: string })[];
+    const hasMore = docs.length > limit;
+    const page = docs.slice(0, limit).reverse();
+    const last = page[page.length - 1];
+    return {
+      data: page,
+      meta: {
+        nextCursor: last && hasMore ? encodeCursor(sortValueOf(last), String(last._id)) : null,
+        prevCursor: cursor ? encodeCursor(cursor.v, cursor.id) : null,
+        hasMore,
+      },
+    };
+  }
+
+  /**
    * Execute a bulk write operation with an array of write operations.
    * @param operations - Array of write operations (e.g., `{ insertOne: { document } }`, `{ updateOne: { filter, update } }`)
    * @param options - Additional bulkWrite options (e.g., `{ ordered: false }`)

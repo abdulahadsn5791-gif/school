@@ -1,11 +1,12 @@
 import {
+  GetClassSummaryByIdQuery,
+  GetSchoolSummaryByIdQuery,
+  GetUserSummaryByIdQuery,
   type IAcademicTermRepository,
-  type IClassRepository,
   Id,
   type IEventBus,
+  type IQueryBus,
   type IReportRepository,
-  type ISchoolRepository,
-  type IUserRepository,
   Reason,
   ReportAggregate,
   type ReportReadModel,
@@ -17,6 +18,7 @@ import type {
   GetReportsType,
   UpdateReportType,
 } from '@ecomerece/shared';
+import type { Actor } from '../../../core/actor/actor';
 import { ConflictError, NotFoundError } from '../../../errors/app-error';
 import { ReportMapper } from '../infra/report.mapper';
 import { ReportMessages } from '../presentation/report.messages';
@@ -25,10 +27,8 @@ export class ReportAppService {
   constructor(
     private readonly reportRepo: IReportRepository,
     private readonly eventBus: IEventBus,
-    private readonly schoolRepo?: ISchoolRepository,
-    private readonly classRepo?: IClassRepository,
+    private readonly queryBus: IQueryBus,
     private readonly termRepo?: IAcademicTermRepository,
-    private readonly userRepo?: IUserRepository,
   ) {}
 
   private async publishEvents(report: ReportAggregate): Promise<void> {
@@ -36,26 +36,26 @@ export class ReportAppService {
     if (events.length > 0) await this.eventBus.publish(events);
   }
 
+  /**
+   * Referential existence via the QueryBus (infra.md Step 1); the term check
+   * uses the academic-term repository because reports need the term record.
+   */
   private async assertRefsExist(
     schoolId: Id,
     classId: Id,
     termId: Id,
     studentId: Id,
   ): Promise<void> {
-    if (this.schoolRepo) {
-      const school = await this.schoolRepo.FindByIdOrThrow(schoolId);
-      if (school.isDeleted) throw new ConflictError('This school has been deleted.');
-    }
-    if (this.classRepo) {
-      const clazz = await this.classRepo.FindByIdOrThrow(classId);
-      if (clazz.isDeleted) throw new ConflictError('This class has been deleted.');
-    }
+    const [school, clazz, student] = await Promise.all([
+      this.queryBus.execute(new GetSchoolSummaryByIdQuery(schoolId.value)),
+      this.queryBus.execute(new GetClassSummaryByIdQuery(classId.value)),
+      this.queryBus.execute(new GetUserSummaryByIdQuery(studentId.value)),
+    ]);
+    if (school.isDeleted) throw new ConflictError('This school has been deleted.');
+    if (clazz.isDeleted) throw new ConflictError('This class has been deleted.');
+    if (student.isDeleted) throw new ConflictError('This student is not available.');
     if (this.termRepo) {
       await this.termRepo.FindByIdOrThrow(termId);
-    }
-    if (this.userRepo) {
-      const student = await this.userRepo.FindByIdOrThrow(studentId);
-      if (student.deleted.isDeleted) throw new ConflictError('This student is not available.');
     }
   }
 
@@ -74,7 +74,9 @@ export class ReportAppService {
     }));
   }
 
-  async createReport(data: CreateReportType, actor: { _id: string }): Promise<ReportReadModel> {
+  async createReport(data: CreateReportType, actor: Actor): Promise<ReportReadModel> {
+    actor.assertRoleIn('admin', 'teacher');
+
     const schoolId = Id.create(data.schoolId);
     const classId = Id.create(data.classId);
     const termId = Id.create(data.termId);
@@ -100,7 +102,7 @@ export class ReportAppService {
       overallGrade: data.overallGrade,
       attendancePercentage: data.attendancePercentage ?? null,
       generalRemarks: data.generalRemarks ?? null,
-      generatedBy: Id.create(actor._id),
+      generatedBy: actor.id,
     });
 
     await this.reportRepo.Create(report);
@@ -108,7 +110,9 @@ export class ReportAppService {
     return ReportMapper.aggregateToReadModel(report);
   }
 
-  async updateReport(data: UpdateReportType, _actor: { _id: string }): Promise<ReportReadModel> {
+  async updateReport(data: UpdateReportType, actor: Actor): Promise<ReportReadModel> {
+    actor.assertRoleIn('admin', 'teacher');
+
     const report = await this.reportRepo.FindByIdOrThrow(Id.create(data.reportId));
     if (report.isDeleted) throw new NotFoundError('Report not found.');
 
@@ -153,8 +157,10 @@ export class ReportAppService {
     };
   }
 
-  async softDelete(data: DeleteReportType, actor: { _id: string }): Promise<string> {
-    const actorId = Id.create(actor._id);
+  async softDelete(data: DeleteReportType, actor: Actor): Promise<string> {
+    actor.assertAdmin();
+
+    const actorId = actor.id;
     const reportId = Id.create(data.reportId);
     const report = await this.reportRepo.FindByIdOrThrow(reportId);
     report.delete(actorId, Reason.create(data.reason));

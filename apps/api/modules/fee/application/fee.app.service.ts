@@ -18,6 +18,7 @@ import type {
   IssueInvoiceType,
   RecordPaymentType,
 } from '@ecomerece/shared';
+import type { Actor } from '../../../core/actor/actor';
 import { ConflictError } from '../../../errors/app-error';
 import { FeeMapper } from '../infra/fee.mapper';
 import { FeeMessages } from '../presentation/fee.messages';
@@ -39,8 +40,10 @@ export class FeeAppService {
 
   async createStructure(
     data: CreateFeeStructureType,
-    _actor: { _id: string },
+    actor: Actor,
   ): Promise<FeeStructureReadModel> {
+    actor.assertAdmin();
+
     const structure = FeeStructureAggregate.create({
       id: Id.create(),
       schoolId: Id.create(data.schoolId),
@@ -85,8 +88,10 @@ export class FeeAppService {
     };
   }
 
-  async softDeleteStructure(data: DeleteFeeStructureType, actor: { _id: string }): Promise<string> {
-    const actorId = Id.create(actor._id);
+  async softDeleteStructure(data: DeleteFeeStructureType, actor: Actor): Promise<string> {
+    actor.assertAdmin();
+
+    const actorId = actor.id;
     const structure = await this.feeRepo.FindStructureByIdOrThrow(Id.create(data.feeStructureId));
     structure.delete(actorId, Reason.create(data.reason));
     await this.feeRepo.SaveStructure(structure);
@@ -95,7 +100,9 @@ export class FeeAppService {
 
   // ── Invoices ──────────────────────────────────────────────────────────────
 
-  async issueInvoice(data: IssueInvoiceType, _actor: { _id: string }): Promise<InvoiceReadModel> {
+  async issueInvoice(data: IssueInvoiceType, actor: Actor): Promise<InvoiceReadModel> {
+    actor.assertAdmin();
+
     const structure = await this.feeRepo.FindStructureByIdOrThrow(Id.create(data.feeStructureId));
     if (structure.isDeleted) throw new ConflictError('This fee structure has been deleted.');
 
@@ -140,10 +147,9 @@ export class FeeAppService {
     };
   }
 
-  async waiveInvoice(
-    data: { invoiceId: string },
-    _actor: { _id: string },
-  ): Promise<InvoiceReadModel> {
+  async waiveInvoice(data: { invoiceId: string }, actor: Actor): Promise<InvoiceReadModel> {
+    actor.assertAdmin();
+
     const invoice = await this.feeRepo.FindInvoiceByIdOrThrow(Id.create(data.invoiceId));
     if (invoice.isDeleted) throw new ConflictError('This invoice has been deleted.');
     invoice.waive();
@@ -153,7 +159,9 @@ export class FeeAppService {
 
   // ── Payments ──────────────────────────────────────────────────────────────
 
-  async recordPayment(data: RecordPaymentType, actor: { _id: string }): Promise<PaymentReadModel> {
+  async recordPayment(data: RecordPaymentType, actor: Actor): Promise<PaymentReadModel> {
+    actor.assertRoleIn('admin', 'teacher');
+
     const invoice = await this.feeRepo.FindInvoiceByIdOrThrow(Id.create(data.invoiceId));
     if (invoice.isDeleted) throw new ConflictError('This invoice has been deleted.');
 
@@ -167,7 +175,7 @@ export class FeeAppService {
       method: data.method,
       reference: data.reference ?? null,
       paidAt: new Date(),
-      receivedBy: Id.create(actor._id),
+      receivedBy: actor.id,
     });
     await this.feeRepo.CreatePayment(payment);
     await this.feeRepo.SaveInvoice(invoice);

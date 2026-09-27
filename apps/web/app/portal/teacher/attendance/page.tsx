@@ -2,12 +2,11 @@
 
 import {
   ATTENDANCE_STATUSES,
-  useGetClassDayAttendance,
-  useGetClassRoster,
+  useAttendanceRegisterScreen,
   useTeacherContext,
   useTeacherRegister,
 } from '@ecomerece/frontend';
-import type { AttendanceResponseDto, AttendanceStatus } from '@ecomerece/shared';
+import type { AttendanceStatus } from '@ecomerece/shared';
 import {
   Badge,
   Button,
@@ -311,12 +310,9 @@ function History({
   date: string;
   onDateChange: (date: string) => void;
 }) {
-  // The API exposes attendance per class and day, not as a browsable list, so this
-  // view is a read-only mirror of the register for a chosen date.
-  const day = useGetClassDayAttendance(classId, date);
-  const roster = useGetClassRoster(classId);
-  const nameById = new Map((roster.data ?? []).map((s) => [s.studentId, s.fullName]));
-  const rows = day.data ?? [];
+  // The same composed screen (new.md §6) the register uses — read-only here.
+  const screen = useAttendanceRegisterScreen(classId, date);
+  const rows = (screen.data?.rows ?? []).filter((row) => row.record !== null);
 
   return (
     <>
@@ -346,7 +342,9 @@ function History({
         </div>
       </Card>
 
-      {day.isError && <p className="mt-3 text-sm text-danger">{(day.error as Error)?.message}</p>}
+      {screen.isError && (
+        <p className="mt-3 text-sm text-danger">{(screen.error as Error)?.message}</p>
+      )}
 
       <div className="mt-4 overflow-hidden rounded-2xl bg-surface-2 shadow-sm">
         <div className="overflow-auto">
@@ -363,25 +361,24 @@ function History({
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-3 py-6 text-center text-sm text-ink-3">
-                    {day.isLoading ? 'Loading\u2026' : `No attendance marked for ${date}`}
+                    {screen.isLoading ? 'Loading\u2026' : `No attendance marked for ${date}`}
                   </td>
                 </tr>
               )}
-              {rows.map((row: AttendanceResponseDto) => {
-                const student = roster.data?.find((s) => s.studentId === row.studentId);
+              {rows.map((row) => {
+                if (!row.record) return null;
+                const { record } = row;
                 return (
-                  <tr key={row.id} className="transition-colors hover:bg-surface-3">
+                  <tr key={record.id} className="transition-colors hover:bg-surface-3">
                     <td className="px-3 py-2 font-mono text-xs text-ink-3">
-                      {student?.rollNumber ?? '\u2014'}
+                      {row.rollNumber ?? '\u2014'}
                     </td>
-                    <td className="px-3 py-2 text-sm text-ink-2">
-                      {nameById.get(row.studentId) ?? 'Unknown student'}
-                    </td>
+                    <td className="px-3 py-2 text-sm text-ink-2">{row.fullName}</td>
                     <td className="px-3 py-2">
-                      <Badge tone={STATUS_TONE[row.status]}>{row.status}</Badge>
+                      <Badge tone={STATUS_TONE[record.status]}>{record.status}</Badge>
                     </td>
                     <td className="max-w-48 truncate px-3 py-2 text-sm text-ink-2">
-                      {row.remark ?? '\u2014'}
+                      {record.remark ?? '\u2014'}
                     </td>
                   </tr>
                 );

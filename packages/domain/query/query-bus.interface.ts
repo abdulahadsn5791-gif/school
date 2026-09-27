@@ -2,7 +2,11 @@ export type IQuery<TResult = unknown> = {
   readonly __result?: TResult;
 };
 
-export type QueryConstructor<TQuery> = new (...args: unknown[]) => TQuery;
+/**
+ * A query class with any constructor signature. Handlers own the concrete
+ * parameter types; the bus only needs `constructor.name`-style identity.
+ */
+export type QueryConstructor<TQuery> = abstract new (...args: any[]) => TQuery;
 
 export interface IQueryHandler<TQuery extends IQuery<TResult>, TResult> {
   handle(query: TQuery): Promise<TResult> | TResult;

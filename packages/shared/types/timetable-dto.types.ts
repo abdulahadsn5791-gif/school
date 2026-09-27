@@ -1,3 +1,5 @@
+export * from './teacher-screen-dto.types';
+
 export type TimetableEntryListResponseDto = {
   data: TimetableEntryResponseDto[];
   meta: {

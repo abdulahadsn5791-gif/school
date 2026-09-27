@@ -4,6 +4,8 @@ import type { ClassAggregate } from '../class.aggregate';
 export interface IClassRepository {
   FindById(id: Id): Promise<ClassAggregate | null>;
   FindByIdOrThrow(id: Id): Promise<ClassAggregate>;
+  /** Live classes among the given ids (batched screen-query support). */
+  FindByIds(ids: Id[]): Promise<ClassAggregate[]>;
   FindBySchool(schoolId: Id): Promise<ClassAggregate[]>;
   FindBySchoolAndYear(schoolId: Id, academicYear: string): Promise<ClassAggregate[]>;
   FindByTeacher(teacherId: Id): Promise<ClassAggregate[]>;

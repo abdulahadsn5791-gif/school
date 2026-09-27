@@ -7,6 +7,7 @@ const assignmentRoutes = new Hono();
 const { assignmentController } = createAssignmentModule();
 
 assignmentRoutes.get('/', authMiddleware, assignmentController.list);
+assignmentRoutes.get('/screen/teacher', authMiddleware, assignmentController.teacherScreen);
 assignmentRoutes.get('/:id', authMiddleware, assignmentController.getAssignmentById);
 assignmentRoutes.post('/', authMiddleware, teacherOrAdminMiddleware, assignmentController.create);
 assignmentRoutes.patch('/', authMiddleware, teacherOrAdminMiddleware, assignmentController.update);

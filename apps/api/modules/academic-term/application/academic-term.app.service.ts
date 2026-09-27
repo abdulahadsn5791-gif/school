@@ -1,10 +1,11 @@
 import {
   AcademicTermAggregate,
   type AcademicTermReadModel,
+  GetSchoolSummaryByIdQuery,
   type IAcademicTermRepository,
   Id,
   type IEventBus,
-  type ISchoolRepository,
+  type IQueryBus,
   Reason,
 } from '@ecomerece/domain';
 import type {
@@ -13,6 +14,7 @@ import type {
   GetAcademicTermsType,
   UpdateAcademicTermType,
 } from '@ecomerece/shared';
+import type { Actor } from '../../../core/actor/actor';
 import { ConflictError, NotFoundError } from '../../../errors/app-error';
 import { AcademicTermMapper } from '../infra/academic-term.mapper';
 import { AcademicTermMessages } from '../presentation/academic-term.messages';
@@ -21,7 +23,7 @@ export class AcademicTermAppService {
   constructor(
     private readonly termRepo: IAcademicTermRepository,
     private readonly eventBus: IEventBus,
-    private readonly schoolRepo?: ISchoolRepository,
+    private readonly queryBus: IQueryBus,
   ) {}
 
   private async publishEvents(term: AcademicTermAggregate): Promise<void> {
@@ -29,15 +31,12 @@ export class AcademicTermAppService {
     if (events.length > 0) await this.eventBus.publish(events);
   }
 
-  async createTerm(
-    data: CreateAcademicTermType,
-    _actor: { _id: string },
-  ): Promise<AcademicTermReadModel> {
+  async createTerm(data: CreateAcademicTermType, actor: Actor): Promise<AcademicTermReadModel> {
+    actor.assertAdmin();
+
     const schoolId = Id.create(data.schoolId);
-    if (this.schoolRepo) {
-      const school = await this.schoolRepo.FindByIdOrThrow(schoolId);
-      if (school.isDeleted) throw new ConflictError('This school has been deleted.');
-    }
+    const school = await this.queryBus.execute(new GetSchoolSummaryByIdQuery(schoolId.value));
+    if (school.isDeleted) throw new ConflictError('This school has been deleted.');
 
     // One live term per school/year/name (schema partial unique index).
     const siblings = await this.termRepo.FindBySchoolAndYear(schoolId, data.academicYear);
@@ -63,10 +62,9 @@ export class AcademicTermAppService {
     return AcademicTermMapper.aggregateToReadModel(term);
   }
 
-  async updateTerm(
-    data: UpdateAcademicTermType,
-    _actor: { _id: string },
-  ): Promise<AcademicTermReadModel> {
+  async updateTerm(data: UpdateAcademicTermType, actor: Actor): Promise<AcademicTermReadModel> {
+    actor.assertAdmin();
+
     const term = await this.termRepo.FindByIdOrThrow(Id.create(data.academicTermId));
     if (term.isDeleted) throw new NotFoundError('Academic term not found.');
 
@@ -118,8 +116,10 @@ export class AcademicTermAppService {
     };
   }
 
-  async softDelete(data: DeleteAcademicTermType, actor: { _id: string }): Promise<string> {
-    const actorId = Id.create(actor._id);
+  async softDelete(data: DeleteAcademicTermType, actor: Actor): Promise<string> {
+    actor.assertAdmin();
+
+    const actorId = actor.id;
     const termId = Id.create(data.academicTermId);
     const term = await this.termRepo.FindByIdOrThrow(termId);
     term.delete(actorId, Reason.create(data.reason));
@@ -128,7 +128,9 @@ export class AcademicTermAppService {
     return AcademicTermMessages.delete(termId, actorId).message;
   }
 
-  async recover(academicTermId: string, _actor: { _id: string }): Promise<AcademicTermReadModel> {
+  async recover(academicTermId: string, actor: Actor): Promise<AcademicTermReadModel> {
+    actor.assertAdmin();
+
     const term = await this.termRepo.FindByIdOrThrow(Id.create(academicTermId));
     term.recover();
     await this.termRepo.Save(term);

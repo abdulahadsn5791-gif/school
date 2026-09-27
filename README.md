@@ -10,7 +10,7 @@ apps/
     core/                      # Framework foundation
       controller/              #   BaseController (ok/created/paginated/assert/body/param/query)
       database/                #   UnitOfWork + AsyncLocalStorage transaction context
-      infrastructure/buses/    #   In-memory CommandBus / QueryBus / EventBus (singletons)
+      infrastructure/buses/    #   In-memory QueryBus / EventBus (singletons)
       repository/              #   BaseRepository + MongoRepository (paginate, cursor, bulk, upsert)
       services/                #   BaseService (guards, validators, retry, date/object helpers)
     errors/                    # AppError hierarchy + global error handler (Zod/Mongo/Supabase safe)

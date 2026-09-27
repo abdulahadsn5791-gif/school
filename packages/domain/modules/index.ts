@@ -3,6 +3,7 @@ export * from './assignment';
 export * from './attendance';
 export * from './audit-log';
 export * from './class';
+export * from './common';
 export * from './enrollment';
 export * from './event';
 export * from './fee';

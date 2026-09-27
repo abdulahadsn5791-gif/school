@@ -1,8 +1,10 @@
 import {
+  GetSchoolByCodeQuery,
+  GetSchoolSummaryByIdQuery,
   Id,
   type IEventBus,
   type IPeriodRepository,
-  type ISchoolRepository,
+  type IQueryBus,
   PeriodAggregate,
   type PeriodReadModel,
   Reason,
@@ -13,6 +15,7 @@ import type {
   GetPeriodsType,
   UpdatePeriodType,
 } from '@ecomerece/shared';
+import type { Actor } from '../../../core/actor/actor';
 import { ConflictError, NotFoundError } from '../../../errors/app-error';
 import { PeriodMapper } from '../infra/period.mapper';
 import { PeriodMessages } from '../presentation/period.messages';
@@ -21,7 +24,7 @@ export class PeriodAppService {
   constructor(
     private readonly periodRepo: IPeriodRepository,
     private readonly eventBus: IEventBus,
-    private readonly schoolRepo?: ISchoolRepository,
+    private readonly queryBus: IQueryBus,
   ) {}
 
   private async publishEvents(period: PeriodAggregate): Promise<void> {
@@ -29,12 +32,13 @@ export class PeriodAppService {
     if (events.length > 0) await this.eventBus.publish(events);
   }
 
-  async createPeriod(data: CreatePeriodType, _actor: { _id: string }): Promise<PeriodReadModel> {
-    const schoolId = Id.create(data.schoolId);
-    if (this.schoolRepo) {
-      const school = await this.schoolRepo.FindByIdOrThrow(schoolId);
-      if (school.isDeleted) throw new ConflictError('This school has been deleted.');
-    }
+  async createPeriod(data: CreatePeriodType, actor: Actor): Promise<PeriodReadModel> {
+    actor.assertAdmin();
+
+    // Engine resolves the human key first (new.md §5): code or id, exactly one.
+    const schoolId = await this.resolveSchool(data);
+    const school = await this.queryBus.execute(new GetSchoolSummaryByIdQuery(schoolId.value));
+    if (school.isDeleted) throw new ConflictError('This school has been deleted.');
 
     // One live period per school+order (schema partial unique index).
     const existing = await this.periodRepo.FindBySchoolAndOrder(schoolId, data.order);
@@ -56,7 +60,9 @@ export class PeriodAppService {
     return PeriodMapper.aggregateToReadModel(period);
   }
 
-  async updatePeriod(data: UpdatePeriodType, _actor: { _id: string }): Promise<PeriodReadModel> {
+  async updatePeriod(data: UpdatePeriodType, actor: Actor): Promise<PeriodReadModel> {
+    actor.assertAdmin();
+
     const period = await this.periodRepo.FindByIdOrThrow(Id.create(data.periodId));
     if (period.isDeleted) throw new NotFoundError('Period not found.');
 
@@ -73,6 +79,13 @@ export class PeriodAppService {
   async getPeriod(periodId: string): Promise<PeriodReadModel> {
     const period = await this.periodRepo.FindByIdOrThrow(Id.create(periodId));
     return PeriodMapper.aggregateToReadModel(period);
+  }
+
+  /** Batch read for screen queries (new.md §6). Hidden periods are skipped. */
+  async getPeriodsByIds(periodIds: string[]): Promise<PeriodReadModel[]> {
+    if (periodIds.length === 0) return [];
+    const periods = await this.periodRepo.FindByIds(periodIds.map((id) => Id.create(id)));
+    return periods.map((period) => PeriodMapper.aggregateToReadModel(period));
   }
 
   async listPeriods(query: GetPeriodsType): Promise<{
@@ -94,8 +107,10 @@ export class PeriodAppService {
     };
   }
 
-  async softDelete(data: DeletePeriodType, actor: { _id: string }): Promise<string> {
-    const actorId = Id.create(actor._id);
+  async softDelete(data: DeletePeriodType, actor: Actor): Promise<string> {
+    actor.assertAdmin();
+
+    const actorId = actor.id;
     const periodId = Id.create(data.periodId);
     const period = await this.periodRepo.FindByIdOrThrow(periodId);
     period.delete(actorId, Reason.create(data.reason));
@@ -104,11 +119,32 @@ export class PeriodAppService {
     return PeriodMessages.delete(periodId, actorId).message;
   }
 
-  async recover(periodId: string, _actor: { _id: string }): Promise<PeriodReadModel> {
+  async recover(periodId: string, actor: Actor): Promise<PeriodReadModel> {
+    actor.assertAdmin();
+
     const period = await this.periodRepo.FindByIdOrThrow(Id.create(periodId));
     period.recover();
     await this.periodRepo.Save(period);
     await this.publishEvents(period);
     return PeriodMapper.aggregateToReadModel(period);
+  }
+
+  /**
+   * Code-or-id school resolution (new.md §5), via the school module's QueryBus
+   * query. Requires exactly one of schoolId / schoolCode.
+   */
+  private async resolveSchool(data: { schoolId?: string; schoolCode?: string }): Promise<Id> {
+    if (data.schoolId && data.schoolCode) {
+      throw new ConflictError('Send either schoolId or schoolCode, not both.');
+    }
+    if (data.schoolId) return Id.create(data.schoolId);
+    if (data.schoolCode) {
+      const school = await this.queryBus.execute(new GetSchoolByCodeQuery(data.schoolCode));
+      if (!school) {
+        throw new NotFoundError(`No school exists with code "${data.schoolCode}".`);
+      }
+      return Id.create(school.id);
+    }
+    throw new ConflictError('A schoolId or schoolCode is required.');
   }
 }

@@ -109,16 +109,8 @@ export default function TeacherGradingPage() {
       {index.isTruncated && (
         <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl bg-surface-2 px-4 py-3">
           <p className="text-sm text-ink-2">
-            You have more than {PAGE_SIZE * 2} assignments, so older ones are not loaded yet.
+            You have a very large assignment history, so the oldest entries may not be listed here.
           </p>
-          <Button
-            variant="secondary"
-            size="sm"
-            isLoading={index.isLoadingMore}
-            onClick={index.loadAll}
-          >
-            Load all assignments
-          </Button>
         </div>
       )}
 

@@ -1,5 +1,6 @@
 import type {
   AttendanceListResponseDto,
+  AttendanceRegisterScreenDto,
   AttendanceResponseDto,
   DeleteAttendanceType,
   GetAttendanceType,
@@ -9,6 +10,13 @@ import type {
 import { http } from '../../lib';
 
 export class AttendanceService {
+  /** Composed screen (new.md §6): roster + existing records for one class/day. */
+  getRegister(classId: string, date: string): Promise<AttendanceRegisterScreenDto> {
+    return http.get<AttendanceRegisterScreenDto>(
+      `/attendance/register?classId=${encodeURIComponent(classId)}&fromDate=${new Date(date).toISOString()}`,
+    );
+  }
+
   list(params: GetAttendanceType): Promise<AttendanceListResponseDto> {
     const searchParams = new URLSearchParams();
     if (params.schoolId) searchParams.set('schoolId', params.schoolId);

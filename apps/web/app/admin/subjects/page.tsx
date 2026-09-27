@@ -2,12 +2,13 @@
 
 import {
   useCreateSubject,
+  useGetSchools,
   useGetSubjects,
   useSoftDeleteSubject,
   useUpdateSubject,
 } from '@ecomerece/frontend';
 import type { GetSubjectsType, SubjectResponseDto } from '@ecomerece/shared';
-import { Badge, Button, Field, Input, Modal } from '@ecomerece/ui';
+import { Badge, Button, Field, Input, Modal, Select } from '@ecomerece/ui';
 import { ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react';
 import { useState } from 'react';
 
@@ -192,6 +193,13 @@ function SubjectForm({
 }) {
   const createSubject = useCreateSubject();
   const updateSubject = useUpdateSubject();
+  // Schools come from the engine's list; the form sends the chosen school's id.
+  const schools = useGetSchools({ limit: 50 });
+  const schoolOptions = (schools.data?.data ?? []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    code: s.code,
+  }));
   const [form, setForm] = useState({
     schoolId: initial?.schoolId ?? '',
     name: initial?.name ?? '',
@@ -220,12 +228,19 @@ function SubjectForm({
       }}
     >
       {mode === 'create' && (
-        <Field label="School ID" hint="UUID of the school">
-          <Input
+        <Field label="School">
+          <Select
             value={form.schoolId}
             onChange={(e) => setForm((f) => ({ ...f, schoolId: e.target.value }))}
             required
-          />
+          >
+            <option value="">{schools.isLoading ? 'Loading schools…' : 'Select a school'}</option>
+            {schoolOptions.map((school) => (
+              <option key={school.id} value={school.id}>
+                {school.name} ({school.code})
+              </option>
+            ))}
+          </Select>
         </Field>
       )}
       <Field label="Name">

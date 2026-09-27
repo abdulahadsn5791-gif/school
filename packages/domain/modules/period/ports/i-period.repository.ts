@@ -4,6 +4,8 @@ import type { PeriodAggregate } from '../period.aggregate';
 export interface IPeriodRepository {
   FindById(id: Id): Promise<PeriodAggregate | null>;
   FindByIdOrThrow(id: Id): Promise<PeriodAggregate>;
+  /** Live periods among the given ids (batched screen-query support). */
+  FindByIds(ids: Id[]): Promise<PeriodAggregate[]>;
   /** Live periods of a school ordered by their order field (ascending). */
   FindBySchool(schoolId: Id): Promise<PeriodAggregate[]>;
   /** Live period with the given order position within a school, if any. */

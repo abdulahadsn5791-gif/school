@@ -1,16 +1,15 @@
-import { getAssignmentsDto } from '@ecomerece/shared';
-import { useCallback, useMemo, useState } from 'react';
-import { assignmentService, useGetAssignments } from '../assignment';
-import { useTeacherContext } from './use-teacher-context';
-
-const PAGE_SIZE = 50;
-const MAX_PAGES = 20;
+import { useQuery } from '@tanstack/react-query';
+import { assignmentService } from '../assignment/assignment.service';
+import { useAuth } from '../auth/use-auth';
 
 export interface AssignmentIndexEntry {
   id: string;
   title: string;
+  type: 'homework' | 'test' | 'oral';
   classId: string;
+  className: string;
   subjectId: string;
+  subjectName: string;
   totalMarks: number;
   dueDate: Date;
 }
@@ -21,94 +20,49 @@ export interface TeacherAssignmentsIndex {
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
-  /** True when more than one page of assignments exists and the rest is not loaded. */
+  /** True when the engine capped the scan and the index may be incomplete. */
   isTruncated: boolean;
-  loadAll: () => void;
-  isLoadingMore: boolean;
 }
 
 /**
- * Every assignment the teacher owns, keyed by id.
- *
- * The list endpoint caps `limit` at 50, so this pages through the remainder
- * on demand. Grading needs the assignment total as the mark ceiling, and a
- * silently truncated index would make older work ungradable.
+ * Every assignment the signed-in teacher owns, keyed by id, with class and
+ * subject names already resolved by the engine (new.md §6: one request, no
+ * paging, no client join). Serves the teacher's assignment list and the
+ * grading queue; grading needs the assignment total as the mark ceiling, so
+ * the engine caps its scan high and reports if it was hit.
  */
 export function useTeacherAssignmentsIndex(): TeacherAssignmentsIndex {
-  const { schoolId, teacherId } = useTeacherContext();
-  const [extra, setExtra] = useState<AssignmentIndexEntry[]>([]);
-  const [isLoadingMore, setLoadingMore] = useState(false);
+  const { user } = useAuth();
+  const teacherId = user?.id ?? '';
 
-  const page = useGetAssignments(
-    { schoolId, teacherId, limit: PAGE_SIZE },
-    { enabled: Boolean(schoolId) && Boolean(teacherId) },
+  const screenQuery = useQuery({
+    queryKey: ['assignments', 'screen', 'teacher', teacherId],
+    queryFn: () => assignmentService.getTeacherAssignmentIndex(),
+    enabled: Boolean(teacherId),
+  });
+
+  const all = (screenQuery.data?.entries ?? []).map(
+    (entry): AssignmentIndexEntry => ({
+      id: entry.id,
+      title: entry.title,
+      type: entry.type,
+      classId: entry.classId,
+      className: entry.className,
+      subjectId: entry.subjectId,
+      subjectName: entry.subjectName,
+      totalMarks: entry.totalMarks,
+      dueDate: entry.dueDate,
+    }),
   );
-  const nextCursor = page.data?.meta.nextCursor ?? null;
 
-  // A new first page (refetch, or a different teacher) invalidates paged-in extras.
-  const pageKey = `${schoolId ?? ''}:${teacherId}:${nextCursor ?? ''}`;
-  const [lastPageKey, setLastPageKey] = useState(pageKey);
-  if (lastPageKey !== pageKey) {
-    setLastPageKey(pageKey);
-    setExtra([]);
-  }
-
-  const loadAll = useCallback(async () => {
-    let cursor = nextCursor;
-    if (!cursor) return;
-    setLoadingMore(true);
-    try {
-      const collected: AssignmentIndexEntry[] = [];
-      let guard = 0;
-      while (cursor && guard < MAX_PAGES) {
-        guard += 1;
-        const response = await assignmentService.getAssignments(
-          getAssignmentsDto.parse({ schoolId, teacherId, cursor, limit: PAGE_SIZE }),
-        );
-        collected.push(
-          ...response.data.map((assignment) => ({
-            id: assignment.id,
-            title: assignment.title,
-            classId: assignment.classId,
-            subjectId: assignment.subjectId,
-            totalMarks: assignment.totalMarks,
-            dueDate: assignment.dueDate,
-          })),
-        );
-        cursor = response.meta.hasMore ? response.meta.nextCursor : null;
-      }
-      setExtra((prev) => [...prev, ...collected]);
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [schoolId, teacherId, nextCursor]);
-
-  const all = useMemo<AssignmentIndexEntry[]>(() => {
-    const first = (page.data?.data ?? []).map((assignment) => ({
-      id: assignment.id,
-      title: assignment.title,
-      classId: assignment.classId,
-      subjectId: assignment.subjectId,
-      totalMarks: assignment.totalMarks,
-      dueDate: assignment.dueDate,
-    }));
-    return [...first, ...extra];
-  }, [page.data, extra]);
-
-  const byId = useMemo(() => {
-    const map = new Map<string, AssignmentIndexEntry>();
-    for (const entry of all) map.set(entry.id, entry);
-    return map;
-  }, [all]);
+  const byId = new Map(all.map((entry) => [entry.id, entry]));
 
   return {
     byId,
     all,
-    isLoading: page.isLoading,
-    isError: page.isError,
-    error: (page.error as Error | null) ?? null,
-    isTruncated: Boolean(nextCursor) && extra.length === 0,
-    loadAll,
-    isLoadingMore,
+    isLoading: screenQuery.isLoading,
+    isError: screenQuery.isError,
+    error: (screenQuery.error as Error | null) ?? null,
+    isTruncated: screenQuery.data?.isTruncated ?? false,
   };
 }

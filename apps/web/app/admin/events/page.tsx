@@ -3,6 +3,7 @@
 import {
   useCreateEvent,
   useGetEvents,
+  useGetSchools,
   useSoftDeleteEvent,
   useUpdateEvent,
 } from '@ecomerece/frontend';
@@ -212,6 +213,9 @@ function EventForm({
 }) {
   const createEvent = useCreateEvent();
   const updateEvent = useUpdateEvent();
+  // Schools come from the engine's list (new.md §10) — no pasted UUIDs.
+  const schools = useGetSchools({ limit: 50 });
+  const schoolOptions = schools.data?.data ?? [];
   const [form, setForm] = useState({
     schoolId: initial?.schoolId ?? '',
     title: initial?.title ?? '',
@@ -268,12 +272,19 @@ function EventForm({
       }}
     >
       {mode === 'create' && (
-        <Field label="School ID" hint="UUID of the school">
-          <Input
+        <Field label="School">
+          <Select
             value={form.schoolId}
             onChange={(e) => setForm((f) => ({ ...f, schoolId: e.target.value }))}
             required
-          />
+          >
+            <option value="">{schools.isLoading ? 'Loading schools…' : 'Select a school'}</option>
+            {schoolOptions.map((school) => (
+              <option key={school.id} value={school.id}>
+                {school.name} ({school.code})
+              </option>
+            ))}
+          </Select>
         </Field>
       )}
       <Field label="Title">

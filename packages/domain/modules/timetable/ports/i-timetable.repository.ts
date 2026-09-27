@@ -12,6 +12,8 @@ export interface ITimetableRepository {
     teacherId: Id,
     academicYear: string,
   ): Promise<TimetableEntryAggregate[]>;
+  /** Live entries a teacher holds, any year — capped for screen reads. */
+  FindByTeacherAllYears(teacherId: Id, limit?: number): Promise<TimetableEntryAggregate[]>;
   /**
    * Live entry occupying a slot (class+year+day+period) or (teacher+year+day+period).
    * Used to guard the two partial unique indexes before writing.

@@ -7,12 +7,13 @@ import {
   updateSubjectDto,
 } from '@ecomerece/shared';
 import type { Context } from 'hono';
+import { requireActor } from '../../../core/actor/actor-context';
 import { BaseController } from '../../../core/controller/base.controller';
 import type { SubjectAppService } from '../application/subject.app.service';
 
 export class SubjectController extends BaseController<SubjectAppService> {
   create = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, createSubjectDto);
     return this.created(c, await this.service.createSubject(data, actor));
   };
@@ -28,20 +29,20 @@ export class SubjectController extends BaseController<SubjectAppService> {
   };
 
   update = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, updateSubjectDto);
     return this.ok(c, await this.service.updateSubject(data, actor));
   };
 
   softDelete = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, deleteSubjectDto);
     const message = await this.service.softDelete(data, actor);
     return this.ok(c, { message });
   };
 
   recover = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, subjectIdDto);
     return this.ok(c, await this.service.recover(data.subjectId, actor));
   };

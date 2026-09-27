@@ -2,6 +2,7 @@ import type {
   CreateTimetableEntryType,
   DeleteTimetableEntryType,
   GetTimetableEntriesType,
+  TeacherTimetableScreenDto,
   TimetableEntryListResponseDto,
   TimetableEntryResponseDto,
   UpdateTimetableEntryType,
@@ -9,6 +10,11 @@ import type {
 import { http } from '../../lib';
 
 export class TimetableService {
+  /** Composed screen (new.md §6): one request replaces the 5-query client join. */
+  getTeacherTimetableScreen(): Promise<TeacherTimetableScreenDto> {
+    return http.get<TeacherTimetableScreenDto>('/timetable/screen/teacher');
+  }
+
   getEntries(params: GetTimetableEntriesType): Promise<TimetableEntryListResponseDto> {
     const searchParams = new URLSearchParams();
     if (params.schoolId) searchParams.set('schoolId', params.schoolId);

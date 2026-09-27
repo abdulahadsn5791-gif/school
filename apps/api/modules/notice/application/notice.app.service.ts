@@ -1,9 +1,10 @@
 import {
-  type IClassRepository,
+  GetClassSummaryByIdQuery,
+  GetSchoolSummaryByIdQuery,
   Id,
   type IEventBus,
   type INoticeRepository,
-  type ISchoolRepository,
+  type IQueryBus,
   NoticeAggregate,
   type NoticeReadModel,
   Reason,
@@ -14,6 +15,7 @@ import type {
   GetNoticesType,
   UpdateNoticeType,
 } from '@ecomerece/shared';
+import type { Actor } from '../../../core/actor/actor';
 import { ConflictError, NotFoundError } from '../../../errors/app-error';
 import { NoticeMapper } from '../infra/notice.mapper';
 import { NoticeMessages } from '../presentation/notice.messages';
@@ -22,8 +24,7 @@ export class NoticeAppService {
   constructor(
     private readonly noticeRepo: INoticeRepository,
     private readonly eventBus: IEventBus,
-    private readonly schoolRepo?: ISchoolRepository,
-    private readonly classRepo?: IClassRepository,
+    private readonly queryBus: IQueryBus,
   ) {}
 
   private async publishEvents(notice: NoticeAggregate): Promise<void> {
@@ -31,16 +32,16 @@ export class NoticeAppService {
     if (events.length > 0) await this.eventBus.publish(events);
   }
 
-  async createNotice(data: CreateNoticeType, actor: { _id: string }): Promise<NoticeReadModel> {
+  async createNotice(data: CreateNoticeType, actor: Actor): Promise<NoticeReadModel> {
+    actor.assertAdmin();
+
     const schoolId = Id.create(data.schoolId);
-    if (this.schoolRepo) {
-      const school = await this.schoolRepo.FindByIdOrThrow(schoolId);
-      if (school.isDeleted) throw new ConflictError('This school has been deleted.');
-    }
+    const school = await this.queryBus.execute(new GetSchoolSummaryByIdQuery(schoolId.value));
+    if (school.isDeleted) throw new ConflictError('This school has been deleted.');
 
     const classId = data.classId ? Id.create(data.classId) : null;
-    if (classId && this.classRepo) {
-      const clazz = await this.classRepo.FindByIdOrThrow(classId);
+    if (classId) {
+      const clazz = await this.queryBus.execute(new GetClassSummaryByIdQuery(classId.value));
       if (clazz.isDeleted) throw new ConflictError('This class has been deleted.');
     }
 
@@ -51,7 +52,7 @@ export class NoticeAppService {
       body: data.body,
       audience: data.audience,
       classId,
-      publishedBy: Id.create(actor._id),
+      publishedBy: actor.id,
       publishAt: data.publishAt ?? new Date(),
       expiresAt: data.expiresAt ?? null,
       attachments: data.attachments ?? [],
@@ -62,7 +63,9 @@ export class NoticeAppService {
     return NoticeMapper.aggregateToReadModel(notice);
   }
 
-  async updateNotice(data: UpdateNoticeType, _actor: { _id: string }): Promise<NoticeReadModel> {
+  async updateNotice(data: UpdateNoticeType, actor: Actor): Promise<NoticeReadModel> {
+    actor.assertAdmin();
+
     const notice = await this.noticeRepo.FindByIdOrThrow(Id.create(data.noticeId));
     if (notice.isDeleted) throw new NotFoundError('Notice not found.');
 
@@ -106,8 +109,10 @@ export class NoticeAppService {
     };
   }
 
-  async softDelete(data: DeleteNoticeType, actor: { _id: string }): Promise<string> {
-    const actorId = Id.create(actor._id);
+  async softDelete(data: DeleteNoticeType, actor: Actor): Promise<string> {
+    actor.assertAdmin();
+
+    const actorId = actor.id;
     const noticeId = Id.create(data.noticeId);
     const notice = await this.noticeRepo.FindByIdOrThrow(noticeId);
     notice.delete(actorId, Reason.create(data.reason));
@@ -116,7 +121,9 @@ export class NoticeAppService {
     return NoticeMessages.delete(noticeId, actorId).message;
   }
 
-  async recover(noticeId: string, _actor: { _id: string }): Promise<NoticeReadModel> {
+  async recover(noticeId: string, actor: Actor): Promise<NoticeReadModel> {
+    actor.assertAdmin();
+
     const notice = await this.noticeRepo.FindByIdOrThrow(Id.create(noticeId));
     notice.recover();
     await this.noticeRepo.Save(notice);

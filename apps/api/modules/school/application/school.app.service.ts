@@ -12,6 +12,7 @@ import type {
   GetSchoolsType,
   UpdateSchoolType,
 } from '@ecomerece/shared';
+import type { Actor } from '../../../core/actor/actor';
 import { ConflictError, NotFoundError } from '../../../errors/app-error';
 import { SchoolMapper } from '../infra/school.mapper';
 import { SchoolMessages } from '../presentation/school.messages';
@@ -27,7 +28,9 @@ export class SchoolAppService {
     if (events.length > 0) await this.eventBus.publish(events);
   }
 
-  async createSchool(data: CreateSchoolType, _actor: { _id: string }): Promise<SchoolReadModel> {
+  async createSchool(data: CreateSchoolType, actor: Actor): Promise<SchoolReadModel> {
+    actor.assertAdmin();
+
     // One live school per code (schema partial unique index).
     const existing = await this.schoolRepo.FindByCode(data.code);
     if (existing && !existing.isDeleted) {
@@ -35,7 +38,7 @@ export class SchoolAppService {
     }
 
     const school = SchoolAggregate.create({
-      id: Id.create(),
+      id: Id.create(), // server-side IDs only (engine law)
       name: data.name,
       code: data.code,
       address: data.address ?? null,
@@ -50,7 +53,9 @@ export class SchoolAppService {
     return SchoolMapper.aggregateToReadModel(school);
   }
 
-  async updateSchool(data: UpdateSchoolType, _actor: { _id: string }): Promise<SchoolReadModel> {
+  async updateSchool(data: UpdateSchoolType, actor: Actor): Promise<SchoolReadModel> {
+    actor.assertAdmin();
+
     const school = await this.schoolRepo.FindByIdOrThrow(Id.create(data.schoolId));
     if (school.isDeleted) throw new NotFoundError('School not found.');
 
@@ -71,6 +76,24 @@ export class SchoolAppService {
   async getSchool(schoolId: string): Promise<SchoolReadModel> {
     const school = await this.schoolRepo.FindByIdOrThrow(Id.create(schoolId));
     return SchoolMapper.aggregateToReadModel(school);
+  }
+
+  /** Public lookup by human key (new.md §5). Hidden schools read as missing. */
+  async getSchoolByCode(code: string): Promise<SchoolReadModel> {
+    const school = await this.schoolRepo.FindByCode(code);
+    if (!school || school.isDeleted) throw new NotFoundError('School not found.');
+    return SchoolMapper.aggregateToReadModel(school);
+  }
+
+  /**
+   * The school module's half of the ReferenceResolver law (new.md §5): resolve
+   * a human key to the school Id, public tier. Lives here because the school
+   * module owns its own key; sibling modules reach it via the QueryBus.
+   */
+  async resolveSchoolByCode(code: string): Promise<Id | null> {
+    const school = await this.schoolRepo.FindByCode(code);
+    if (!school || school.isDeleted) return null;
+    return school.id;
   }
 
   async listSchools(query: GetSchoolsType): Promise<{
@@ -98,8 +121,10 @@ export class SchoolAppService {
     };
   }
 
-  async softDelete(data: DeleteSchoolType, actor: { _id: string }): Promise<string> {
-    const actorId = Id.create(actor._id);
+  async softDelete(data: DeleteSchoolType, actor: Actor): Promise<string> {
+    actor.assertAdmin();
+
+    const actorId = actor.id;
     const schoolId = Id.create(data.schoolId);
     const school = await this.schoolRepo.FindByIdOrThrow(schoolId);
     school.delete(actorId, Reason.create(data.reason));
@@ -108,7 +133,9 @@ export class SchoolAppService {
     return SchoolMessages.delete(schoolId, actorId).message;
   }
 
-  async recover(schoolId: string, _actor: { _id: string }): Promise<SchoolReadModel> {
+  async recover(schoolId: string, actor: Actor): Promise<SchoolReadModel> {
+    actor.assertAdmin();
+
     const school = await this.schoolRepo.FindByIdOrThrow(Id.create(schoolId));
     school.recover();
     await this.schoolRepo.Save(school);

@@ -1,5 +1,8 @@
 export * from './events';
+export type { ActorTier } from './policies/actor-tier';
+export * from './policies/visibility';
 export * from './ports/i-user.repository';
+export * from './queries/user-summary.queries';
 export * from './read-models/user.read-model';
 export * from './user.aggregate';
 export * from './value-objects/avatar.vo';

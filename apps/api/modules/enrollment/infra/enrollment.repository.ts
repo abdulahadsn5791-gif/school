@@ -41,6 +41,15 @@ export class EnrollmentRepository
     return docs.map((doc) => EnrollmentMapper.persistenceToAggregate(doc));
   }
 
+  async FindByClasses(classIds: Id[]): Promise<EnrollmentAggregate[]> {
+    if (classIds.length === 0) return [];
+    const docs = await super.find({
+      classId: { $in: classIds.map((id) => id.value) },
+      'deleted.deleted': false,
+    });
+    return docs.map((doc) => EnrollmentMapper.persistenceToAggregate(doc));
+  }
+
   async FindByStudent(studentId: Id): Promise<EnrollmentAggregate[]> {
     const docs = await super.find({ studentId: studentId.value });
     return docs.map((doc) => EnrollmentMapper.persistenceToAggregate(doc));

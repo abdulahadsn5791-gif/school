@@ -6,6 +6,7 @@ import {
   type SessionReadModel,
 } from '@ecomerece/domain';
 import type { GetSessionsType, IssueSessionType, SessionIdType } from '@ecomerece/shared';
+import type { Actor } from '../../../core/actor/actor';
 import { SessionMapper } from '../infra/session.mapper';
 import { SessionMessages } from '../presentation/session.messages';
 
@@ -20,7 +21,9 @@ export class SessionAppService {
     if (events.length > 0) await this.eventBus.publish(events);
   }
 
-  async issueSession(data: IssueSessionType, _actor: { _id: string }): Promise<SessionReadModel> {
+  async issueSession(data: IssueSessionType, actor: Actor): Promise<SessionReadModel> {
+    actor.assertAdmin();
+
     const session = SessionAggregate.create({
       id: Id.create(),
       userId: Id.create(data.userId),
@@ -35,17 +38,21 @@ export class SessionAppService {
     return SessionMapper.aggregateToReadModel(session);
   }
 
-  async revokeSession(data: SessionIdType, actor: { _id: string }): Promise<string> {
+  async revokeSession(data: SessionIdType, actor: Actor): Promise<string> {
+    actor.assertAdmin();
+
     const session = await this.sessionRepo.FindByIdOrThrow(Id.create(data.sessionId));
     session.revoke();
     await this.sessionRepo.Save(session);
     await this.publishEvents(session);
-    return SessionMessages.revoke(session.id, Id.create(actor._id)).message;
+    return SessionMessages.revoke(session.id, actor.id).message;
   }
 
-  async revokeAllSessions(userId: string, actor: { _id: string }): Promise<string> {
+  async revokeAllSessions(userId: string, actor: Actor): Promise<string> {
+    actor.assertAdmin();
+
     const count = await this.sessionRepo.RevokeAllForUser(Id.create(userId));
-    return SessionMessages.revokeAll(Id.create(userId), Id.create(actor._id), count).message;
+    return SessionMessages.revokeAll(Id.create(userId), actor.id, count).message;
   }
 
   async listSessions(query: GetSessionsType): Promise<{ data: SessionReadModel[] }> {

@@ -2,9 +2,12 @@
 
 import {
   useCreateFeeStructure,
+  useGetAdminPaginatedUsers,
+  useGetClasses,
   useGetFeeStructures,
   useGetInvoices,
   useGetPayments,
+  useGetSchools,
   useIssueInvoice,
   useRecordPayment,
   useWaiveInvoice,
@@ -119,6 +122,13 @@ function StructuresTab() {
 
 function StructureForm({ onDone }: { onDone: () => void }) {
   const createStructure = useCreateFeeStructure();
+  // Pickers instead of UUID inputs (new.md §10).
+  const schools = useGetSchools({ limit: 50 });
+  const schoolOptions = schools.data?.data ?? [];
+  const classes = useGetClasses({ limit: 50 });
+  const classOptions = (classes.data?.data ?? []).filter(
+    (clazz) => !form.schoolId || clazz.schoolId === form.schoolId,
+  );
   const [form, setForm] = useState({
     schoolId: '',
     classId: '',
@@ -153,19 +163,33 @@ function StructureForm({ onDone }: { onDone: () => void }) {
       }}
     >
       <div className="grid grid-cols-2 gap-3">
-        <Field label="School ID">
-          <Input
+        <Field label="School">
+          <Select
             value={form.schoolId}
             onChange={(e) => setForm((f) => ({ ...f, schoolId: e.target.value }))}
             required
-          />
+          >
+            <option value="">{schools.isLoading ? 'Loading schools…' : 'Select a school'}</option>
+            {schoolOptions.map((school) => (
+              <option key={school.id} value={school.id}>
+                {school.name} ({school.code})
+              </option>
+            ))}
+          </Select>
         </Field>
-        <Field label="Class ID">
-          <Input
+        <Field label="Class">
+          <Select
             value={form.classId}
             onChange={(e) => setForm((f) => ({ ...f, classId: e.target.value }))}
             required
-          />
+          >
+            <option value="">{classes.isLoading ? 'Loading classes…' : 'Select a class'}</option>
+            {classOptions.map((clazz) => (
+              <option key={clazz.id} value={clazz.id}>
+                {clazz.name} · {clazz.academicYear}
+              </option>
+            ))}
+          </Select>
         </Field>
       </div>
       <Field label="Academic year" hint="2026-2027">
@@ -346,6 +370,11 @@ function InvoicesTab() {
 
 function IssueForm({ onDone }: { onDone: () => void }) {
   const issueInvoice = useIssueInvoice();
+  // Pickers instead of UUID inputs (new.md §10).
+  const schools = useGetSchools({ limit: 50 });
+  const schoolOptions = schools.data?.data ?? [];
+  const students = useGetAdminPaginatedUsers({ role: 'student', limit: 50 });
+  const studentOptions = students.data?.data ?? [];
   const [form, setForm] = useState({
     schoolId: '',
     studentId: '',
@@ -373,21 +402,35 @@ function IssueForm({ onDone }: { onDone: () => void }) {
         submit();
       }}
     >
-      <Field label="School ID">
-        <Input
+      <Field label="School">
+        <Select
           value={form.schoolId}
           onChange={(e) => setForm((f) => ({ ...f, schoolId: e.target.value }))}
           required
-        />
+        >
+          <option value="">{schools.isLoading ? 'Loading schools…' : 'Select a school'}</option>
+          {schoolOptions.map((school) => (
+            <option key={school.id} value={school.id}>
+              {school.name} ({school.code})
+            </option>
+          ))}
+        </Select>
       </Field>
-      <Field label="Student ID">
-        <Input
+      <Field label="Student">
+        <Select
           value={form.studentId}
           onChange={(e) => setForm((f) => ({ ...f, studentId: e.target.value }))}
           required
-        />
+        >
+          <option value="">{students.isLoading ? 'Loading students…' : 'Select a student'}</option>
+          {studentOptions.map((student) => (
+            <option key={student.id} value={student.id}>
+              {student.fullName}
+            </option>
+          ))}
+        </Select>
       </Field>
-      <Field label="Fee structure ID">
+      <Field label="Fee structure ID" hint="Listed above — copy its id">
         <Input
           value={form.feeStructureId}
           onChange={(e) => setForm((f) => ({ ...f, feeStructureId: e.target.value }))}

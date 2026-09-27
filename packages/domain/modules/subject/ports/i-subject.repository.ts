@@ -4,6 +4,8 @@ import type { SubjectAggregate } from '../subject.aggregate';
 export interface ISubjectRepository {
   FindById(id: Id): Promise<SubjectAggregate | null>;
   FindByIdOrThrow(id: Id): Promise<SubjectAggregate>;
+  /** Live subjects among the given ids (batched screen-query support). */
+  FindByIds(ids: Id[]): Promise<SubjectAggregate[]>;
   /** Live subject with the given code within a school, if any. */
   FindBySchoolAndCode(schoolId: Id, code: string): Promise<SubjectAggregate | null>;
   Save(subject: SubjectAggregate): Promise<void>;

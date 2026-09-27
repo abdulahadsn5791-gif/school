@@ -8,6 +8,7 @@ const { attendanceController } = createAttendanceModule();
 
 attendanceRoutes.get('/', authMiddleware, attendanceController.list);
 attendanceRoutes.get('/student', authMiddleware, attendanceController.getByStudent);
+attendanceRoutes.get('/register', authMiddleware, attendanceController.register);
 attendanceRoutes.get('/class-day', authMiddleware, attendanceController.getByClassAndDate);
 attendanceRoutes.post('/mark', authMiddleware, teacherOrAdminMiddleware, attendanceController.mark);
 attendanceRoutes.patch('/', authMiddleware, adminMiddleware, attendanceController.update);

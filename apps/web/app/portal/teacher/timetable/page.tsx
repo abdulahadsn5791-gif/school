@@ -1,9 +1,9 @@
 'use client';
 
-import { useTeacherTimetable } from '@ecomerece/frontend';
-import { Badge, Button, Card, EmptyState, ErrorState, Spinner } from '@ecomerece/ui';
+import { type TimetableSlot, useTeacherTimetable } from '@ecomerece/frontend';
+import { Badge, Button, Card, EmptyState, ErrorState, Select, Spinner } from '@ecomerece/ui';
 import { CalendarDays } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 const DAY_LABELS: Record<string, string> = {
   MONDAY: 'Monday',
@@ -15,20 +15,30 @@ const DAY_LABELS: Record<string, string> = {
 };
 
 type ViewMode = 'week' | 'agenda';
+type DayGroup = { day: string; slots: TimetableSlot[] };
 
 export default function TeacherTimetablePage() {
-  const {
-    byDay,
-    totalSlots,
-    isLoading,
-    isError,
-    error,
-    isTruncated,
-    isLoadingMore,
-    loadAll,
-    hasAnyTimetable,
-  } = useTeacherTimetable();
+  const { byDay, classes, totalSlots, isLoading, isError, error, hasAnyTimetable } =
+    useTeacherTimetable();
   const [view, setView] = useState<ViewMode>('week');
+  const [classFilter, setClassFilter] = useState('');
+
+  // Days left empty by the filter are dropped so the week view does not render
+  // a run of "No lessons" cards.
+  const visibleByDay = useMemo<DayGroup[]>(
+    () =>
+      byDay
+        .map((group) => ({
+          day: group.day,
+          slots: classFilter
+            ? group.slots.filter((slot) => slot.classId === classFilter)
+            : group.slots,
+        }))
+        .filter((group) => group.slots.length > 0 || !classFilter),
+    [byDay, classFilter],
+  );
+
+  const visibleSlots = visibleByDay.reduce((sum, group) => sum + group.slots.length, 0);
 
   if (isLoading) {
     return (
@@ -48,7 +58,9 @@ export default function TeacherTimetablePage() {
           <h1 className="text-2xl font-bold tracking-tight text-ink">My timetable</h1>
           <p className="mt-1 text-sm text-ink-3">
             {hasAnyTimetable
-              ? `${totalSlots} ${totalSlots === 1 ? 'slot' : 'slots'} across the week.`
+              ? classFilter
+                ? `${visibleSlots} ${visibleSlots === 1 ? 'slot' : 'slots'} for the selected class.`
+                : `${totalSlots} ${totalSlots === 1 ? 'slot' : 'slots'} across the week.`
               : 'Your weekly teaching schedule.'}
           </p>
         </div>
@@ -91,25 +103,35 @@ export default function TeacherTimetablePage() {
 
       {!isError && hasAnyTimetable && (
         <>
-          {isTruncated && (
-            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl bg-surface-2 px-4 py-3">
-              <p className="flex-1 text-sm text-ink-2">
-                Your week has more entries than one page can hold.
-              </p>
-              <Button variant="secondary" size="sm" isLoading={isLoadingMore} onClick={loadAll}>
-                Load all entries
-              </Button>
+          {classes.length > 1 && (
+            <div className="mt-4 sm:w-64">
+              <Select
+                aria-label="Filter by class"
+                value={classFilter}
+                onChange={(e) => setClassFilter(e.target.value)}
+              >
+                <option value="">All classes</option>
+                {classes.map((clazz) => (
+                  <option key={clazz.id} value={clazz.id}>
+                    {clazz.name}
+                  </option>
+                ))}
+              </Select>
             </div>
           )}
 
-          {view === 'week' ? <WeekGrid byDay={byDay} /> : <AgendaList byDay={byDay} />}
+          {view === 'week' ? (
+            <WeekGrid byDay={visibleByDay} />
+          ) : (
+            <AgendaList byDay={visibleByDay} />
+          )}
         </>
       )}
     </div>
   );
 }
 
-function WeekGrid({ byDay }: { byDay: Array<{ day: string; slots: Array<Slot> }> }) {
+function WeekGrid({ byDay }: { byDay: DayGroup[] }) {
   return (
     <div className="mt-6 space-y-3">
       {byDay.map(({ day, slots }) => (
@@ -137,7 +159,7 @@ function WeekGrid({ byDay }: { byDay: Array<{ day: string; slots: Array<Slot> }>
   );
 }
 
-function AgendaList({ byDay }: { byDay: Array<{ day: string; slots: Array<Slot> }> }) {
+function AgendaList({ byDay }: { byDay: DayGroup[] }) {
   const days = byDay.filter((day) => day.slots.length > 0);
   return (
     <div className="mt-6">
@@ -169,17 +191,7 @@ function AgendaList({ byDay }: { byDay: Array<{ day: string; slots: Array<Slot> 
   );
 }
 
-interface Slot {
-  entryId: string;
-  periodName: string;
-  periodOrder: number;
-  startTime: string | null;
-  endTime: string | null;
-  className: string;
-  subjectName: string;
-}
-
-function SlotRow({ slot }: { slot: Slot }) {
+function SlotRow({ slot }: { slot: TimetableSlot }) {
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">
       <span className="w-28 shrink-0 font-mono text-xs text-ink-3">

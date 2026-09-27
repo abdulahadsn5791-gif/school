@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { Id, LeaveAggregate } from '@ecomerece/domain';
+import { Actor } from '../../../core/actor/actor';
 import { InMemoryEventBus } from '../../../core/infrastructure/buses/in-memory-event-bus';
 import { MemoryLeaveRepository } from '../../../testing/memory-repositories';
 import { LeaveAppService } from './leave.app.service';
@@ -13,7 +14,12 @@ const TO = new Date(Date.now() + 3 * 86_400_000);
 
 function setup() {
   const leaveRepo = new MemoryLeaveRepository();
-  const service = new LeaveAppService(leaveRepo, new InMemoryEventBus());
+  /** QueryBus double: every referenced entity is live (tests own the rules). */
+  const queryBus = {
+    register: () => {},
+    execute: async () => ({ id: 'x', schoolId: SCHOOL_ID.value, isDeleted: false }),
+  } as never;
+  const service = new LeaveAppService(leaveRepo, new InMemoryEventBus(), queryBus);
   return { service, leaveRepo };
 }
 
@@ -30,8 +36,12 @@ function leaveFor(applicantId: Id) {
   });
 }
 
-const teacherA = { _id: TEACHER_A.value, role: 'teacher' };
-const admin = { _id: 'x', role: 'admin' };
+/** Test actor builder — mirrors what auth/admin middleware produces. */
+const asActor = (id: Id, role: 'teacher' | 'admin'): Actor =>
+  new Actor({ id, role, tier: role === 'admin' ? 'admin' : 'public', schoolId: null });
+
+const teacherA = asActor(TEACHER_A, 'teacher');
+const admin = asActor(Id.create(), 'admin');
 
 describe('LeaveAppService authorization', () => {
   test('a teacher cannot read another applicant’s leave by id', async () => {

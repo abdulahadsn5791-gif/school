@@ -2,7 +2,9 @@
 
 import {
   useCreateNotice,
+  useGetClasses,
   useGetNotices,
+  useGetSchools,
   useSoftDeleteNotice,
   useUpdateNotice,
 } from '@ecomerece/frontend';
@@ -219,6 +221,13 @@ function NoticeForm({
 }) {
   const createNotice = useCreateNotice();
   const updateNotice = useUpdateNotice();
+  // Pickers instead of UUID inputs (new.md §10).
+  const schools = useGetSchools({ limit: 50 });
+  const schoolOptions = schools.data?.data ?? [];
+  const classes = useGetClasses({ limit: 50 });
+  const classOptions = (classes.data?.data ?? []).filter(
+    (clazz) => !form.schoolId || clazz.schoolId === form.schoolId,
+  );
   const [form, setForm] = useState({
     schoolId: initial?.schoolId ?? '',
     title: initial?.title ?? '',
@@ -272,12 +281,19 @@ function NoticeForm({
       }}
     >
       {mode === 'create' && (
-        <Field label="School ID" hint="UUID of the school">
-          <Input
+        <Field label="School">
+          <Select
             value={form.schoolId}
             onChange={(e) => setForm((f) => ({ ...f, schoolId: e.target.value }))}
             required
-          />
+          >
+            <option value="">{schools.isLoading ? 'Loading schools…' : 'Select a school'}</option>
+            {schoolOptions.map((school) => (
+              <option key={school.id} value={school.id}>
+                {school.name} ({school.code})
+              </option>
+            ))}
+          </Select>
         </Field>
       )}
       <Field label="Title">
@@ -309,12 +325,19 @@ function NoticeForm({
           </Select>
         </Field>
         {form.audience === 'CLASS' && (
-          <Field label="Class ID" hint="Required for CLASS audience">
-            <Input
+          <Field label="Class" hint="Required for CLASS audience">
+            <Select
               value={form.classId}
               onChange={(e) => setForm((f) => ({ ...f, classId: e.target.value }))}
               required
-            />
+            >
+              <option value="">{classes.isLoading ? 'Loading classes…' : 'Select a class'}</option>
+              {classOptions.map((clazz) => (
+                <option key={clazz.id} value={clazz.id}>
+                  {clazz.name} · {clazz.academicYear}
+                </option>
+              ))}
+            </Select>
           </Field>
         )}
       </div>

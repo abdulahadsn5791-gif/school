@@ -1,6 +1,6 @@
-import { useQueries } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { ENROLLMENT_QUERY_KEY, enrollmentService } from '../enrollment';
+import { enrollmentService } from '../enrollment/enrollment.service';
 
 export interface StudentIdentity {
   fullName: string;
@@ -15,45 +15,39 @@ export interface StudentNameIndex {
 }
 
 /**
- * Resolves student names for a set of classes in one hook.
+ * Resolves student names for a set of classes in ONE request (new.md §6).
  *
- * Submissions and attendance rows carry only a student id, so the display names
- * are joined in from the roster of whichever class each row belongs to. Queries
- * are batched by react-query rather than issued serially, and repeated class ids
- * are deduplicated so a page of rows from one class costs a single request.
+ * Submissions and attendance rows carry only a student id, so the engine joins
+ * the names server-side across all requested classes; the hook just flattens
+ * the entries into the map the pages render from.
  */
 export function useStudentNameIndex(classIds: string[]): StudentNameIndex {
+  // Stable, deduplicated key so an id-order change does not refetch.
   const unique = useMemo(() => [...new Set(classIds.filter(Boolean))].sort(), [classIds]);
+  const cacheKey = unique.join(',');
 
-  const results = useQueries({
-    queries: unique.map((classId) => ({
-      // Shares the cache key with useGetClassRoster so the two do not duplicate fetches.
-      queryKey: [...ENROLLMENT_QUERY_KEY, 'roster', classId],
-      queryFn: () => enrollmentService.getClassRoster(classId),
-      enabled: Boolean(classId),
-      staleTime: 5 * 60_000,
-    })),
+  const query = useQuery({
+    queryKey: ['enrollments', 'student-names', cacheKey],
+    queryFn: () => enrollmentService.getStudentNameIndex(unique),
+    enabled: unique.length > 0,
+    staleTime: 5 * 60_000,
   });
 
   const byId = useMemo(() => {
     const map = new Map<string, StudentIdentity>();
-    for (const result of results) {
-      const roster = result.data;
-      if (!roster) continue;
-      for (const student of roster) {
-        map.set(student.studentId, {
-          fullName: student.fullName,
-          rollNumber: student.rollNumber,
-        });
-      }
+    for (const entry of query.data ?? []) {
+      map.set(entry.studentId, {
+        fullName: entry.fullName,
+        rollNumber: entry.rollNumber,
+      });
     }
     return map;
-  }, [results]);
+  }, [query.data]);
 
   return {
     byId,
-    isLoading: results.some((result) => result.isLoading),
-    isError: results.some((result) => result.isError),
-    error: (results.find((result) => result.error)?.error as Error | undefined) ?? null,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    error: (query.error as Error | null) ?? null,
   };
 }

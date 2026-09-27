@@ -1,10 +1,11 @@
 import {
+  GetSchoolSummaryByIdQuery,
   GuardianAggregate,
   type GuardianReadModel,
   Id,
   type IEventBus,
   type IGuardianRepository,
-  type ISchoolRepository,
+  type IQueryBus,
   NameInfoVO,
   PersonName,
   Reason,
@@ -15,6 +16,7 @@ import type {
   GetGuardiansType,
   UpdateGuardianType,
 } from '@ecomerece/shared';
+import type { Actor } from '../../../core/actor/actor';
 import { ConflictError, NotFoundError } from '../../../errors/app-error';
 import { GuardianMapper } from '../infra/guardian.mapper';
 import { GuardianMessages } from '../presentation/guardian.messages';
@@ -23,7 +25,7 @@ export class GuardianAppService {
   constructor(
     private readonly guardianRepo: IGuardianRepository,
     private readonly eventBus: IEventBus,
-    private readonly schoolRepo?: ISchoolRepository,
+    private readonly queryBus: IQueryBus,
   ) {}
 
   private async publishEvents(guardian: GuardianAggregate): Promise<void> {
@@ -39,15 +41,12 @@ export class GuardianAppService {
     );
   }
 
-  async createGuardian(
-    data: CreateGuardianType,
-    _actor: { _id: string },
-  ): Promise<GuardianReadModel> {
+  async createGuardian(data: CreateGuardianType, actor: Actor): Promise<GuardianReadModel> {
+    actor.assertAdmin();
+
     const schoolId = Id.create(data.schoolId);
-    if (this.schoolRepo) {
-      const school = await this.schoolRepo.FindByIdOrThrow(schoolId);
-      if (school.isDeleted) throw new ConflictError('This school has been deleted.');
-    }
+    const school = await this.queryBus.execute(new GetSchoolSummaryByIdQuery(schoolId.value));
+    if (school.isDeleted) throw new ConflictError('This school has been deleted.');
 
     const existing = await this.guardianRepo.FindByPhone(schoolId, data.phone);
     if (existing && !existing.isDeleted) {
@@ -69,10 +68,9 @@ export class GuardianAppService {
     return GuardianMapper.aggregateToReadModel(guardian);
   }
 
-  async updateGuardian(
-    data: UpdateGuardianType,
-    _actor: { _id: string },
-  ): Promise<GuardianReadModel> {
+  async updateGuardian(data: UpdateGuardianType, actor: Actor): Promise<GuardianReadModel> {
+    actor.assertAdmin();
+
     const guardian = await this.guardianRepo.FindByIdOrThrow(Id.create(data.guardianId));
     if (guardian.isDeleted) throw new NotFoundError('Guardian not found.');
 
@@ -119,8 +117,10 @@ export class GuardianAppService {
     };
   }
 
-  async softDelete(data: DeleteGuardianType, actor: { _id: string }): Promise<string> {
-    const actorId = Id.create(actor._id);
+  async softDelete(data: DeleteGuardianType, actor: Actor): Promise<string> {
+    actor.assertAdmin();
+
+    const actorId = actor.id;
     const guardianId = Id.create(data.guardianId);
     const guardian = await this.guardianRepo.FindByIdOrThrow(guardianId);
     guardian.delete(actorId, Reason.create(data.reason));
@@ -129,7 +129,9 @@ export class GuardianAppService {
     return GuardianMessages.delete(guardianId, actorId).message;
   }
 
-  async recover(guardianId: string, _actor: { _id: string }): Promise<GuardianReadModel> {
+  async recover(guardianId: string, actor: Actor): Promise<GuardianReadModel> {
+    actor.assertAdmin();
+
     const guardian = await this.guardianRepo.FindByIdOrThrow(Id.create(guardianId));
     guardian.recover();
     await this.guardianRepo.Save(guardian);

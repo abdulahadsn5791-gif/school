@@ -1,13 +1,16 @@
 import {
   AttendanceAggregate,
   type AttendanceReadModel,
+  type AttendanceRegisterScreenReadModel,
   type ClassAggregate,
+  GetClassRosterQuery,
+  GetSchoolSummaryByIdQuery,
+  GetUserSummaryByIdQuery,
   type IAttendanceRepository,
   type IClassRepository,
   Id,
   type IEventBus,
-  type ISchoolRepository,
-  type IUserRepository,
+  type IQueryBus,
   Reason,
 } from '@ecomerece/domain';
 import type {
@@ -16,17 +19,20 @@ import type {
   MarkAttendanceType,
   UpdateAttendanceType,
 } from '@ecomerece/shared';
+import type { Actor } from '../../../core/actor/actor';
 import { ConflictError, ForbiddenError, NotFoundError } from '../../../errors/app-error';
 import { AttendanceMapper } from '../infra/attendance.mapper';
 import { AttendanceMessages } from '../presentation/attendance.messages';
+
+/** The kernel Actor supplies everything this module needs. */
+type ActorLike = Actor;
 
 export class AttendanceAppService {
   constructor(
     private readonly attendanceRepo: IAttendanceRepository,
     private readonly eventBus: IEventBus,
-    private readonly schoolRepo?: ISchoolRepository,
+    private readonly queryBus: IQueryBus,
     private readonly classRepo?: IClassRepository,
-    private readonly userRepo?: IUserRepository,
   ) {}
 
   private async publishEvents(attendances: AttendanceAggregate[]): Promise<void> {
@@ -46,22 +52,17 @@ export class AttendanceAppService {
    * Admins may mark any class. Teachers may only mark classes they are the
    * class teacher of.
    */
-  async mark(
-    data: MarkAttendanceType,
-    actor: { _id: string; role: string },
-  ): Promise<AttendanceReadModel[]> {
+  async mark(data: MarkAttendanceType, actor: ActorLike): Promise<AttendanceReadModel[]> {
     const schoolId = Id.create(data.schoolId);
     const classId = Id.create(data.classId);
-    const markedBy = Id.create(actor._id);
+    const markedBy = actor.id;
 
-    if (this.schoolRepo) {
-      const school = await this.schoolRepo.FindByIdOrThrow(schoolId);
-      if (school.isDeleted) throw new ConflictError('This school has been deleted.');
-    }
+    const school = await this.queryBus.execute(new GetSchoolSummaryByIdQuery(schoolId.value));
+    if (school.isDeleted) throw new ConflictError('This school has been deleted.');
     if (this.classRepo) {
       const clazz = await this.classRepo.FindByIdOrThrow(classId);
       if (clazz.isDeleted) throw new ConflictError('This class has been deleted.');
-      if (actor.role !== 'admin' && !this.isClassTeacher(clazz, actor._id)) {
+      if (actor.role !== 'admin' && !this.isClassTeacher(clazz, actor.id.value)) {
         throw new ForbiddenError('You can only mark attendance for your own classes.');
       }
     }
@@ -82,11 +83,9 @@ export class AttendanceAppService {
         continue;
       }
 
-      if (this.userRepo) {
-        const student = await this.userRepo.FindByIdOrThrow(studentId);
-        if (student.deleted.isDeleted) {
-          throw new ConflictError('One of the students is not available.');
-        }
+      const student = await this.queryBus.execute(new GetUserSummaryByIdQuery(studentId.value));
+      if (student.isDeleted) {
+        throw new ConflictError('One of the students is not available.');
       }
 
       const attendance = AttendanceAggregate.create({
@@ -109,11 +108,13 @@ export class AttendanceAppService {
     return results.map((attendance) => AttendanceMapper.aggregateToReadModel(attendance));
   }
 
-  async update(data: UpdateAttendanceType, actor: { _id: string }): Promise<AttendanceReadModel> {
+  async update(data: UpdateAttendanceType, actor: ActorLike): Promise<AttendanceReadModel> {
+    actor.assertAdmin();
+
     const attendance = await this.attendanceRepo.FindByIdOrThrow(Id.create(data.attendanceId));
     if (attendance.isDeleted) throw new NotFoundError('Attendance record not found.');
 
-    attendance.updateStatus(data.status, data.remark ?? null, Id.create(actor._id));
+    attendance.updateStatus(data.status, data.remark ?? null, actor.id);
     await this.attendanceRepo.Save(attendance);
     await this.publishEvents([attendance]);
     return AttendanceMapper.aggregateToReadModel(attendance);
@@ -137,10 +138,10 @@ export class AttendanceAppService {
    * teacher must be the class teacher, so the read path matches the write path
    * enforced by `mark`.
    */
-  private async assertCanReadClass(classId: string, actor: { _id: string; role: string }) {
+  private async assertCanReadClass(classId: string, actor: ActorLike) {
     if (actor.role === 'admin' || !this.classRepo) return;
     const clazz = await this.classRepo.FindByIdOrThrow(Id.create(classId));
-    if (!this.isClassTeacher(clazz, actor._id)) {
+    if (!this.isClassTeacher(clazz, actor.id.value)) {
       throw new ForbiddenError('You can only view attendance for your own classes.');
     }
   }
@@ -148,9 +149,9 @@ export class AttendanceAppService {
   async getByClassAndDate(
     classId: string,
     date: string,
-    actor?: { _id: string; role: string },
+    actor: ActorLike,
   ): Promise<AttendanceReadModel[]> {
-    if (actor) await this.assertCanReadClass(classId, actor);
+    await this.assertCanReadClass(classId, actor);
     const records = await this.attendanceRepo.FindByClassAndDate(
       Id.create(classId),
       new Date(date),
@@ -158,14 +159,53 @@ export class AttendanceAppService {
     return records.filter((r) => !r.isDeleted).map((r) => AttendanceMapper.aggregateToReadModel(r));
   }
 
+  /**
+   * The attendance register screen (new.md §6): the class's students with names
+   * and roll numbers, each pre-filled with any record already held for the day.
+   * The roster is resolved cross-module through the QueryBus (public tier, batched
+   * name lookups) — same ownership law as `mark`: admins any class, teachers only
+   * their own.
+   */
+  async getRegister(classId: string, date: string, actor: ActorLike) {
+    await this.assertCanReadClass(classId, actor);
+
+    const [records, roster] = await Promise.all([
+      this.attendanceRepo.FindByClassAndDate(Id.create(classId), new Date(date)),
+      this.queryBus.execute(new GetClassRosterQuery(classId)),
+    ]);
+
+    const recordByStudent = new Map(
+      records
+        .filter((r) => !r.isDeleted)
+        .map((r) => [r.studentId.value, AttendanceMapper.aggregateToReadModel(r)]),
+    );
+
+    const rows = roster.map((student) => {
+      const record = recordByStudent.get(student.studentId) ?? null;
+      return {
+        studentId: student.studentId,
+        fullName: student.fullName,
+        rollNumber: student.rollNumber,
+        record: record ? { id: record.id, status: record.status, remark: record.remark } : null,
+      };
+    });
+
+    return {
+      classId,
+      date: new Date(date),
+      isAlreadyMarked: recordByStudent.size > 0,
+      rows,
+    } as AttendanceRegisterScreenReadModel;
+  }
+
   async list(
     query: GetAttendanceType,
-    actor?: { _id: string; role: string },
+    actor: ActorLike,
   ): Promise<{
     data: AttendanceReadModel[];
     meta: { nextCursor: string | null; prevCursor: string | null; hasMore: boolean };
   }> {
-    if (query.classId && actor) await this.assertCanReadClass(query.classId, actor);
+    if (query.classId) await this.assertCanReadClass(query.classId, actor);
     if (!query.classId || !query.fromDate) {
       return { data: [], meta: { nextCursor: null, prevCursor: null, hasMore: false } };
     }
@@ -182,8 +222,10 @@ export class AttendanceAppService {
     };
   }
 
-  async softDelete(data: DeleteAttendanceType, actor: { _id: string }): Promise<string> {
-    const actorId = Id.create(actor._id);
+  async softDelete(data: DeleteAttendanceType, actor: ActorLike): Promise<string> {
+    actor.assertAdmin();
+
+    const actorId = actor.id;
     const attendanceId = Id.create(data.attendanceId);
     const attendance = await this.attendanceRepo.FindByIdOrThrow(attendanceId);
     attendance.delete(actorId, Reason.create(data.reason));

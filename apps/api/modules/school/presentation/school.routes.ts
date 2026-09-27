@@ -7,6 +7,7 @@ const schoolRoutes = new Hono();
 const { schoolController } = createSchoolModule();
 
 schoolRoutes.get('/', authMiddleware, schoolController.list);
+schoolRoutes.get('/code/:code', authMiddleware, schoolController.getSchoolByCode);
 schoolRoutes.get('/:id', authMiddleware, schoolController.getSchoolById);
 schoolRoutes.post('/', authMiddleware, adminMiddleware, schoolController.create);
 schoolRoutes.patch('/', authMiddleware, adminMiddleware, schoolController.update);

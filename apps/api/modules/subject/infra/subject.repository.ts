@@ -25,6 +25,12 @@ export class SubjectRepository
     return SubjectMapper.persistenceToAggregate(doc);
   }
 
+  async FindByIds(ids: Id[]): Promise<SubjectAggregate[]> {
+    if (ids.length === 0) return [];
+    const docs = await super.find({ _id: { $in: ids.map((id) => id.value) } });
+    return docs.map((doc) => SubjectMapper.persistenceToAggregate(doc));
+  }
+
   async FindBySchoolAndCode(schoolId: Id, code: string): Promise<SubjectAggregate | null> {
     const doc = await super.findOne({ schoolId: schoolId.value, code: code.trim().toUpperCase() });
     if (!doc) return null;

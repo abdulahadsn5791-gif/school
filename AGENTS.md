@@ -54,7 +54,7 @@ Build bottom-up, exactly this order:
 Follow the bundled `category` module as the reference — it wires all four layers end-to-end.
 
 **Dependency rule:** Domain never imports Infrastructure. Infrastructure never imports Presentation.
-Cross-module communication uses QueryBus, CommandBus, or EventBus (registered in each module's `*.module.ts`).
+Cross-module communication uses QueryBus or EventBus (registered in each module's `*.module.ts`).
 
 ## Code Style
 

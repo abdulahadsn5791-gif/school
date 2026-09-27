@@ -2,6 +2,11 @@
 
 import {
   useCreateTimetableEntry,
+  useGetAdminPaginatedUsers,
+  useGetClasses,
+  useGetPeriods,
+  useGetSchools,
+  useGetSubjects,
   useGetTimetableEntries,
   useSoftDeleteTimetableEntry,
   useUpdateTimetableEntry,
@@ -244,6 +249,26 @@ function TimetableForm({
   const pending = createEntry.isPending || updateEntry.isPending;
   const error = createEntry.error ?? updateEntry.error;
 
+  // Pickers instead of UUID inputs (new.md §10): every ref is chosen from the
+  // engine's own lists, so admins work with names and codes, not ids.
+  const schools = useGetSchools({ limit: 50 });
+  const schoolOptions = schools.data?.data ?? [];
+  const classes = useGetClasses({ limit: 50 });
+  const classOptions = (classes.data?.data ?? []).filter(
+    (clazz) => !form.schoolId || clazz.schoolId === form.schoolId,
+  );
+  const periods = useGetPeriods({ limit: 50 });
+  const periodOptions = (periods.data?.data ?? []).filter(
+    (period) => !form.schoolId || period.schoolId === form.schoolId,
+  );
+  const subjects = useGetSubjects(
+    { schoolId: form.schoolId, limit: 50 },
+    { enabled: Boolean(form.schoolId) },
+  );
+  const subjectOptions = subjects.data?.data ?? [];
+  const teachers = useGetAdminPaginatedUsers({ role: 'teacher', limit: 50 });
+  const teacherOptions = teachers.data?.data ?? [];
+
   const submit = () => {
     if (mode === 'create') {
       createEntry.mutate(
@@ -283,53 +308,99 @@ function TimetableForm({
       {mode === 'create' && (
         <>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="School ID">
-              <Input
+            <Field label="School">
+              <Select
                 value={form.schoolId}
                 onChange={(e) => setForm((f) => ({ ...f, schoolId: e.target.value }))}
                 required
-              />
+              >
+                <option value="">
+                  {schools.isLoading ? 'Loading schools…' : 'Select a school'}
+                </option>
+                {schoolOptions.map((school) => (
+                  <option key={school.id} value={school.id}>
+                    {school.name} ({school.code})
+                  </option>
+                ))}
+              </Select>
             </Field>
             <Field label="Academic year" hint="2026-2027">
               <Input
                 value={form.academicYear}
                 onChange={(e) => setForm((f) => ({ ...f, academicYear: e.target.value }))}
+                placeholder="2026-2027"
                 required
               />
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Class ID">
-              <Input
+            <Field label="Class">
+              <Select
                 value={form.classId}
                 onChange={(e) => setForm((f) => ({ ...f, classId: e.target.value }))}
                 required
-              />
+              >
+                <option value="">
+                  {classes.isLoading ? 'Loading classes…' : 'Select a class'}
+                </option>
+                {classOptions.map((clazz) => (
+                  <option key={clazz.id} value={clazz.id}>
+                    {clazz.name} · {clazz.academicYear}
+                  </option>
+                ))}
+              </Select>
             </Field>
-            <Field label="Period ID">
-              <Input
+            <Field label="Period">
+              <Select
                 value={form.periodId}
                 onChange={(e) => setForm((f) => ({ ...f, periodId: e.target.value }))}
                 required
-              />
+              >
+                <option value="">
+                  {periods.isLoading ? 'Loading periods…' : 'Select a period'}
+                </option>
+                {periodOptions.map((period) => (
+                  <option key={period.id} value={period.id}>
+                    {period.order}. {period.name} ({period.startTime}–{period.endTime})
+                  </option>
+                ))}
+              </Select>
             </Field>
           </div>
         </>
       )}
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Subject ID">
-          <Input
+        <Field label="Subject">
+          <Select
             value={form.subjectId}
             onChange={(e) => setForm((f) => ({ ...f, subjectId: e.target.value }))}
             required
-          />
+          >
+            <option value="">
+              {subjects.isLoading ? 'Loading subjects…' : 'Select a subject'}
+            </option>
+            {subjectOptions.map((subject) => (
+              <option key={subject.id} value={subject.id}>
+                {subject.name} ({subject.code})
+              </option>
+            ))}
+          </Select>
         </Field>
-        <Field label="Teacher ID">
-          <Input
+        <Field label="Teacher">
+          <Select
             value={form.teacherId}
             onChange={(e) => setForm((f) => ({ ...f, teacherId: e.target.value }))}
             required
-          />
+          >
+            <option value="">
+              {teachers.isLoading ? 'Loading teachers…' : 'Select a teacher'}
+            </option>
+            {teacherOptions.map((teacher) => (
+              <option key={teacher.id} value={teacher.id}>
+                {teacher.fullName}
+              </option>
+            ))}
+          </Select>
         </Field>
       </div>
       <Field label="Day of week">

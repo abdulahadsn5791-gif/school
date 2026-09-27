@@ -1,13 +1,16 @@
 import type { EmailVO, Id } from '../../../value-objects';
+import type { ActorTier } from '../policies/actor-tier';
 import type { UserAggregate } from '../user.aggregate';
 import type { UserRolesType } from '../value-objects/role-info.vo';
 
 export interface IUserRepository {
-  FindById(id: Id): Promise<UserAggregate | null>;
-  FindByEmail(email: EmailVO): Promise<UserAggregate | null>;
-  FindByIdOrThrow(id: Id): Promise<UserAggregate>;
-  FindByIds(id: Id[]): Promise<UserAggregate[]>;
-  FindByEmailOrThrow(email: EmailVO): Promise<UserAggregate>;
+  /** Two-tier point read (new.md §3): public tier hides deleted/banned/blocked. */
+  FindById(id: Id, tier?: ActorTier): Promise<UserAggregate | null>;
+  FindByEmail(email: EmailVO, tier?: ActorTier): Promise<UserAggregate | null>;
+  /** Public tier throws the same NotFoundError for hidden and missing rows. */
+  FindByIdOrThrow(id: Id, tier?: ActorTier): Promise<UserAggregate>;
+  FindByIds(ids: Id[], tier?: ActorTier): Promise<UserAggregate[]>;
+  FindByEmailOrThrow(email: EmailVO, tier?: ActorTier): Promise<UserAggregate>;
   Save(user: UserAggregate): Promise<void>;
   Create(add: UserAggregate): Promise<void>;
   Delete(id: Id): Promise<void>;
@@ -19,6 +22,7 @@ export interface IUserRepository {
     cursor?: Id;
     limit?: number;
     direction?: 'next' | 'prev';
+    tier?: ActorTier;
   }): Promise<{
     data: UserAggregate[];
     meta: { nextCursor: string | null; prevCursor: string | null; hasMore: boolean };

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { AssignmentAggregate, ClassAggregate, Id, StudentTestAggregate } from '@ecomerece/domain';
+import { Actor } from '../../../core/actor/actor';
 import { InMemoryEventBus } from '../../../core/infrastructure/buses/in-memory-event-bus';
 import {
   MemoryAssignmentRepository,
@@ -67,10 +68,21 @@ function setup() {
   });
   assignmentRepo.records.push(assignmentOfA, assignmentOfB);
 
+  /** QueryBus double: every referenced entity is live (tests own the rules). */
+  const queryBus = {
+    register: () => {},
+    execute: async () => ({
+      id: 'x',
+      schoolId: SCHOOL_ID.value,
+      isDeleted: false,
+      fullName: 'x',
+      role: 'student',
+    }),
+  } as never;
   const service = new StudentTestAppService(
     studentTestRepo,
     new InMemoryEventBus(),
-    undefined,
+    queryBus,
     assignmentRepo,
   );
   return { service, studentTestRepo, assignmentRepo, assignmentOfA, assignmentOfB };
@@ -85,8 +97,12 @@ function submissionFor(assignmentId: Id) {
   });
 }
 
-const teacherA = { _id: TEACHER_A.value, role: 'teacher' };
-const admin = { _id: 'x', role: 'admin' };
+/** Test actor builder — mirrors what auth/admin middleware produces. */
+const asActor = (id: Id, role: 'teacher' | 'admin' | 'student'): Actor =>
+  new Actor({ id, role, tier: role === 'admin' ? 'admin' : 'public', schoolId: null });
+
+const teacherA = asActor(TEACHER_A, 'teacher');
+const admin = asActor(Id.create(), 'admin');
 
 describe('StudentTestAppService authorization', () => {
   test('a teacher cannot grade a submission for another teacher’s assignment', async () => {
@@ -175,7 +191,7 @@ describe('StudentTestAppService authorization', () => {
 
   test('a teacher with no assignments gets an empty result', async () => {
     const { service } = setup();
-    const stranger = { _id: Id.create().value, role: 'teacher' };
+    const stranger = asActor(Id.create(), 'teacher');
 
     const result = await service.listSubmissions({ schoolId: SCHOOL_ID.value }, stranger);
 
@@ -202,7 +218,7 @@ describe('StudentTestAppService authorization', () => {
     const { service, studentTestRepo, assignmentOfA } = setup();
     const submission = submissionFor(assignmentOfA.id);
     studentTestRepo.records.push(submission);
-    const otherStudent = { _id: Id.create().value };
+    const otherStudent = asActor(Id.create(), 'student');
 
     await expect(
       service.submit(

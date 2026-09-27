@@ -12,6 +12,7 @@ import {
   updateUserDto,
 } from '@ecomerece/shared';
 import type { Context } from 'hono';
+import { requireActor } from '../../../core/actor/actor-context';
 import { BaseController } from '../../../core/controller/base.controller';
 import type { UserAppService } from '../application/user.app.service';
 
@@ -37,7 +38,7 @@ export class UserController extends BaseController<UserAppService> {
   };
 
   getMe = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     return this.ok(c, await this.service.getMe(actor));
   };
 
@@ -48,56 +49,56 @@ export class UserController extends BaseController<UserAppService> {
   };
 
   assignRole = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, assignUserRoleDto);
     return this.ok(c, await this.service.assignRole(data, actor));
   };
 
   blockUser = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, blockUserDto);
     return this.ok(c, await this.service.blockUser(data, actor));
   };
 
   blockLift = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, objUserIdDto);
     return this.ok(c, await this.service.blockLift(data.userId, actor));
   };
 
   banUser = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, banUserDto);
     return this.ok(c, await this.service.banUser(data, actor));
   };
 
   banLift = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, objUserIdDto);
     return this.ok(c, await this.service.banLift(data.userId, actor));
   };
 
   extendBan = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, extendBanDto);
     return this.ok(c, await this.service.extendBan(data, actor));
   };
 
   shortBan = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, extendBanDto);
     return this.ok(c, await this.service.shortenBan(data, actor));
   };
 
   softDelete = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, deleteUserDto);
     await this.service.softDeleteUser(data, actor);
     return this.noContent(c);
   };
 
   recover = async (c: Context) => {
-    const actor = c.get('user');
+    const actor = requireActor();
     const data = await this.body(c, objUserIdDto);
     return this.ok(c, await this.service.recoverUser(data.userId, actor));
   };

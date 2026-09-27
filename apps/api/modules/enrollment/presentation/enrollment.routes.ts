@@ -6,12 +6,19 @@ import { createEnrollmentModule } from '../enrollment.module';
 const enrollmentRoutes = new Hono();
 const { enrollmentController } = createEnrollmentModule();
 
-// `/roster` is registered before `/:id` so the static segment always wins.
+// `/roster` and `/student-names` are registered before `/:id` so the static
+// segment always wins.
 enrollmentRoutes.get(
   '/roster',
   authMiddleware,
   teacherOrAdminMiddleware,
   enrollmentController.roster,
+);
+enrollmentRoutes.get(
+  '/student-names',
+  authMiddleware,
+  teacherOrAdminMiddleware,
+  enrollmentController.studentNameIndex,
 );
 enrollmentRoutes.get('/', authMiddleware, enrollmentController.list);
 enrollmentRoutes.get('/:id', authMiddleware, enrollmentController.getEnrollmentById);

@@ -45,6 +45,20 @@ export class AssignmentRepository
     return docs.map((doc) => AssignmentMapper.persistenceToAggregate(doc));
   }
 
+  async FindByTeacherAllSchools(teacherId: Id, limit?: number): Promise<AssignmentAggregate[]> {
+    const query = this.model
+      .find({
+        teacherId: teacherId.value,
+        'deleted.deleted': false,
+      })
+      .sort({ dueDate: -1, _id: -1 })
+      .session(this.session ?? null)
+      .lean();
+    if (limit !== undefined) query.limit(limit);
+    const docs = (await query) as AssignmentPersistence[];
+    return docs.map((doc) => AssignmentMapper.persistenceToAggregate(doc));
+  }
+
   async Save(assignment: AssignmentAggregate): Promise<void> {
     const { _id, ...data } = AssignmentMapper.aggregateToPersistence(assignment);
     await AssignmentModel.updateOne({ _id }, { $set: data });

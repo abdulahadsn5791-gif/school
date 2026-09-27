@@ -2,12 +2,14 @@
 
 import {
   useCreateEnrollment,
+  useGetAdminPaginatedUsers,
+  useGetClasses,
   useGetEnrollments,
   useSoftDeleteEnrollment,
   useUpdateEnrollment,
 } from '@ecomerece/frontend';
 import type { EnrollmentResponseDto, GetEnrollmentsType } from '@ecomerece/shared';
-import { Badge, Button, Field, Input, Modal } from '@ecomerece/ui';
+import { Badge, Button, Field, Input, Modal, Select } from '@ecomerece/ui';
 import { ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react';
 import { useState } from 'react';
 
@@ -222,6 +224,11 @@ function EnrollmentForm({
 }) {
   const createEnrollment = useCreateEnrollment();
   const updateEnrollment = useUpdateEnrollment();
+  // Pickers instead of UUID inputs (new.md §10).
+  const classes = useGetClasses({ limit: 50 });
+  const classOptions = classes.data?.data ?? [];
+  const students = useGetAdminPaginatedUsers({ role: 'student', limit: 50 });
+  const studentOptions = students.data?.data ?? [];
   const [form, setForm] = useState({
     studentId: initial?.studentId ?? '',
     classId: initial?.classId ?? '',
@@ -262,21 +269,36 @@ function EnrollmentForm({
       }}
     >
       {mode === 'create' && (
-        <Field label="Student ID" hint="UUID of the student user">
-          <Input
+        <Field label="Student">
+          <Select
             value={form.studentId}
             onChange={(e) => setForm((f) => ({ ...f, studentId: e.target.value }))}
             required
-          />
+          >
+            <option value="">
+              {students.isLoading ? 'Loading students…' : 'Select a student'}
+            </option>
+            {studentOptions.map((student) => (
+              <option key={student.id} value={student.id}>
+                {student.fullName}
+              </option>
+            ))}
+          </Select>
         </Field>
       )}
-      <Field label="Class ID" hint="UUID of the class">
-        <Input
+      <Field label="Class">
+        <Select
           value={form.classId}
           onChange={(e) => setForm((f) => ({ ...f, classId: e.target.value }))}
           required
-          disabled={mode === 'edit' && false}
-        />
+        >
+          <option value="">{classes.isLoading ? 'Loading classes…' : 'Select a class'}</option>
+          {classOptions.map((clazz) => (
+            <option key={clazz.id} value={clazz.id}>
+              {clazz.name} · {clazz.academicYear}
+            </option>
+          ))}
+        </Select>
       </Field>
       <Field label="Roll number" hint="Optional, e.g. 12">
         <Input

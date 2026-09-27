@@ -1,24 +1,16 @@
 import { eventBus } from '../../core/infrastructure/buses/in-memory-event-bus';
-import { ClassRepository } from '../class/infra/class.repository';
-import { PeriodRepository } from '../period/infra/period.repository';
-import { SchoolRepository } from '../school/infra/school.repository';
-import { SubjectRepository } from '../subject/infra/subject.repository';
-import { UserRepository } from '../user/infra/user.repository';
+import { queryBus } from '../../core/infrastructure/buses/in-memory-query-bus';
 import { TimetableAppService } from './application/timetable.app.service';
 import { TimetableRepository } from './infra/timetable.repository';
 import { TimetableController } from './presentation/timetable.controller';
 
+/**
+ * Composition root (new.md §4): own repo + kernel buses only. Cross-module
+ * reads go through the QueryBus — no foreign repository imports.
+ */
 export function createTimetableModule() {
   const timetableRepo = new TimetableRepository();
-  const appSvc = new TimetableAppService(
-    timetableRepo,
-    eventBus,
-    new SchoolRepository(),
-    new ClassRepository(),
-    new SubjectRepository(),
-    new PeriodRepository(),
-    new UserRepository(),
-  );
+  const appSvc = new TimetableAppService(timetableRepo, eventBus, queryBus);
   const timetableController = new TimetableController(appSvc);
 
   return {
